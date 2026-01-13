@@ -3200,3 +3200,144 @@ or write a “Why Workers Aren’t Enough” section for your D0 spec
 
 
 ChatGPT can make mistakes. Check important info.
+
+
+This is a solid technical review. You’re not disputing the substance of the “Consider” section—you’re tightening it so it doesn’t *overclaim* or accidentally undermine the JavaCrust motivation. Below is a **clean, precise revision** that incorporates your three points, plus brief implementation notes so it’s actionable rather than just editorial.
+
+---
+
+## Review Outcome
+
+Your critique is **correct and necessary**. Without these clarifications, the section risks implying that:
+
+* SharedArrayBuffer is broadly usable (it isn’t)
+* OffscreenCanvas helps “UI performance” in general (it doesn’t)
+* Parallel JS via Workers meaningfully addresses DOM-driven lag (it doesn’t)
+
+All three would weaken the justification for JavaCrust if left vague.
+
+---
+
+## Revised “Consider” Section (Technically Precise)
+
+> While JavaScript is fundamentally single-threaded per execution context, modern runtimes provide mechanisms for parallel execution in constrained forms. These mechanisms are primarily designed to offload computation rather than restructure UI execution semantics.
+
+### Core Mechanisms for Parallelism
+
+In 2026, JavaScript developers can achieve true parallel execution using the following tools:
+
+#### Web Workers (Browser)
+
+Web Workers allow scripts to run on background threads separate from the main UI thread. Each worker has its own event loop and isolated heap, and communication occurs via `postMessage()` or shared memory.
+
+**Important constraints:**
+
+* Workers **cannot access the DOM**
+* All DOM reads, writes, layout, and rendering remain confined to the main thread
+* As a result, Workers do not mitigate layout thrashing or DOM mutation storms
+
+Workers are therefore effective for CPU-bound tasks (e.g. parsing, compression, cryptography), but not for accelerating DOM-heavy UI workloads.
+
+#### Worker Threads (Node.js)
+
+Node.js worker threads provide parallel execution within a single process, with isolated V8 environments and message-passing semantics similar to Web Workers.
+
+These are well-suited to server-side CPU-bound tasks, but are not applicable to browser UI execution and do not address client-side rendering bottlenecks.
+
+#### SharedArrayBuffer & Atomics
+
+SharedArrayBuffer enables multiple threads to share memory, with Atomics providing low-level synchronization primitives.
+
+**Practical constraints:**
+
+* In browsers, SharedArrayBuffer is available **only under cross-origin isolation** (COOP/COEP headers)
+* This requirement significantly limits drop-in deployment on arbitrary third-party websites
+* Atomics expose low-level synchronization but do not provide structured state management, effect isolation, or deterministic commit semantics
+
+SharedArrayBuffer enables shared memory, but does not by itself address DOM consistency, execution ordering, or UI responsiveness.
+
+#### OffscreenCanvas
+
+OffscreenCanvas allows canvas rendering to be transferred to a worker thread, enabling parallel graphics rendering without blocking the main thread.
+
+**Scope limitation:**
+
+* OffscreenCanvas applies **only to canvas-based rendering**
+* It does not accelerate DOM-based UI, layout, styling, or event handling
+* It is not a general solution for complex document-driven interfaces
+
+---
+
+### Concurrency vs Parallelism
+
+It is important to distinguish between two orthogonal concepts:
+
+* **Concurrency (event loop):** Multiple tasks are interleaved on a single thread using the event loop (e.g. Promises, async/await). Execution remains serial.
+* **Parallelism (Workers):** Multiple threads execute simultaneously on separate CPU cores, but with isolated state and no shared access to the DOM.
+
+Existing JavaScript parallelism mechanisms preserve the same imperative execution semantics and DOM constraints. They improve responsiveness by offloading computation, but do not restructure when or how UI effects are applied.
+
+---
+
+## Why This Strengthens the JavaCrust Case
+
+With these clarifications in place, the contrast becomes crisp:
+
+* Workers provide **parallel compute**
+* OffscreenCanvas provides **parallel canvas rendering**
+* SharedArrayBuffer provides **shared memory under strict conditions**
+
+But **none of them**:
+
+* batch DOM mutations
+* control effect ordering
+* coalesce microtask cascades
+* prevent layout thrash
+* provide rollback or determinism
+
+Which leads naturally to your thesis:
+
+> The core performance pathologies of complex web applications arise from uncontrolled effect interleaving on the main thread, not from a lack of raw parallelism. JavaCrust targets this gap by redefining JavaScript execution around transactional ticks and deferred, deterministic effects.
+
+---
+
+## Suggested Follow-Up Tasks (Concrete)
+
+You already hinted at these; here they are crisply defined:
+
+1. **Clarify SharedArrayBuffer deployment constraints**
+
+   * Explicitly document COOP/COEP as a blocker for drop-in acceleration
+   * Note that JavaCrust must not rely on SAB for baseline functionality
+
+2. **Explicitly scope OffscreenCanvas**
+
+   * Treat it as a specialized backend optimization, not a UI solution
+   * Keep it out of the core JavaCrust execution model
+
+3. **Add a “Why Workers Aren’t Enough” subsection**
+
+   * One paragraph summarizing:
+
+     * DOM exclusivity
+     * layout bottlenecks
+     * effect ordering
+   * This prevents readers from mentally substituting “parallel JS” for your proposal
+
+---
+
+## Bottom Line
+
+Your review is not nitpicking—it prevents category errors.
+
+With these changes, the “Consider” section:
+
+* stays accurate
+* avoids overpromising
+* and cleanly motivates why **execution restructuring**, not just parallelism, is required
+
+If you want, next we can:
+
+* integrate this revised section into D0 cleanly
+* add a short “threat model” for drop-in deployment
+* or formalize how JavaCrust *could* internally leverage Workers without exposing them to developers
