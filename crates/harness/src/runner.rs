@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-use rquickjs::{Context, Ctx, Error, Object, Runtime};
+use rquickjs::{Context, Ctx, Error, Function, Object, Runtime};
 use rquickjs::prelude::{Func, Rest};
 
 use crate::transaction::{CommitOutcome, Transaction};
@@ -60,6 +60,26 @@ impl HarnessRunner {
         Ok(self.snapshot())
     }
 
+    pub fn run_tick<P: AsRef<Path>>(&mut self, path: P) -> Result<ExecutionResult, Error> {
+        let state = Rc::clone(&self.state);
+        self.context.with(|ctx| {
+            state.borrow_mut().transaction.begin()?;
+            if let Err(err) = ctx.eval_file::<(), _>(path.as_ref()) {
+                let _ = state.borrow_mut().transaction.rollback();
+                return Err(err);
+            }
+            while ctx.execute_pending_job() {}
+            let outcome = state.borrow_mut().transaction.commit()?;
+            let mut state = state.borrow_mut();
+            match outcome {
+                CommitOutcome::Committed(_) => state.commit_count += 1,
+                CommitOutcome::RolledBack => state.rollback_count += 1,
+            }
+            Ok(())
+        })?;
+        Ok(self.snapshot())
+    }
+
     fn snapshot(&self) -> ExecutionResult {
         let state = self.state.borrow();
         ExecutionResult {
@@ -110,9 +130,17 @@ fn register_host<'js>(ctx: Ctx<'js>, state: Rc<RefCell<RunnerState>>) -> Result<
     let effect_state = Rc::clone(&state);
     host.set(
         "effect",
-        Func::from(move |op: String, args: Rest<String>| -> Result<(), Error> {
+        Func::from(move |op: String, args: Rest<String>| {
             let effect = EffectRecord { op, args: args.0 };
             effect_state.borrow_mut().transaction.record_effect(effect)
+        }),
+    )?;
+
+    host.set(
+        "enqueue_microtask",
+        Func::from(move |func: Function| -> Result<(), Error> {
+            func.defer(())?;
+            Ok(())
         }),
     )?;
 
