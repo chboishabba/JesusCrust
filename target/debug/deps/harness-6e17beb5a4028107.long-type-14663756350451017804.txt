@@ -1,0 +1,2 @@
+Func<{closure@crates/harness/src/runner.rs:136:20: 136:41}, (rquickjs::Function<'_>,)>
+std::convert::From<{closure@crates/harness/src/runner.rs:136:20: 136:41}>

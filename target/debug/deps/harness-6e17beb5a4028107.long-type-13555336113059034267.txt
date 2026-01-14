@@ -1,0 +1,2 @@
+Func<{closure@crates/harness/src/runner.rs:116:20: 116:27}, ()>
+std::convert::From<{closure@crates/harness/src/runner.rs:116:20: 116:27}>
