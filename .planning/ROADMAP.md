@@ -54,10 +54,10 @@ Plans:
 **Goal**: Document API surface and provide example scenarios for early adopters.
 **Depends on**: Phase 3
 **Research**: Unlikely
-**Plans**: TBD
+**Plans**: 1 plan
 
 Plans:
-- [ ] 04-01: API sketch, docs, and examples
+- [x] 04-01: API sketch, docs, and examples
 
 ## Progress
 
@@ -69,4 +69,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Execution Harness | 1/1 | Complete | 2026-01-14 |
 | 2. Rust/WASM Core | 2/2 | Complete | 2026-01-14 |
 | 3. JS Host Integration | 2/2 | Complete | 2026-01-14 |
-| 4. Developer Experience | 0/1 | Not started | - |
+| 4. Developer Experience | 1/1 | Complete | 2026-01-14 |
