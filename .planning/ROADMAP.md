@@ -64,10 +64,11 @@ Plans:
 **Goal**: Assess feasibility and constraints for drop-in acceleration of existing apps using the JesusCrust runtime.
 **Depends on**: Phase 3/4 (semantics + API defined)
 **Research**: Deep (integration/compat)
-**Plans**: 1 plan
+**Plans**: 2 plans
 
 Plans:
 - [x] 05-01: Research plan (discovery + constraints)
+- [x] 05-02: Drop-in adapter prototype
 
 ## Progress
 
@@ -80,4 +81,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 2. Rust/WASM Core | 2/2 | Complete | 2026-01-14 |
 | 3. JS Host Integration | 2/2 | Complete | 2026-01-14 |
 | 4. Developer Experience | 1/1 | Complete | 2026-01-14 |
-| 5. Drop-in Acceleration Research | 1/1 | Complete | 2026-01-14 |
+| 5. Drop-in Acceleration Research | 2/2 | Complete | 2026-01-14 |
