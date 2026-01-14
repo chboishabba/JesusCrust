@@ -48,7 +48,7 @@ Plans:
 
 Plans:
 - [x] 03-01: JS host runner and patch applier
-- [ ] 03-02: Host-side constraints + debug tooling
+- [x] 03-02: Host-side constraints + debug tooling
 
 ### Phase 4: Developer Experience
 **Goal**: Document API surface and provide example scenarios for early adopters.
@@ -68,5 +68,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Execution Harness | 1/1 | Complete | 2026-01-14 |
 | 2. Rust/WASM Core | 2/2 | Complete | 2026-01-14 |
-| 3. JS Host Integration | 1/2 | In progress | - |
+| 3. JS Host Integration | 2/2 | Complete | 2026-01-14 |
 | 4. Developer Experience | 0/1 | Not started | - |
