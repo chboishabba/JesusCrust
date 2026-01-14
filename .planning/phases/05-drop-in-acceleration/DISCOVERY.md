@@ -43,7 +43,11 @@
 - Include mutation guard to catch direct DOM writes during prototype.
 - Measure: determinism (fingerprint stable), no mid-tick visibility, single commit per tick.
 
+### Prototype notes
+- `prototypes/dropin/adapter.js` exposes `createDropInHost()` that buffers writes (EnsureNode, SetText, SetAttr, AppendChild) before invoking the js-host runner's `beginTick`/`commitBatch`. It reuses `fingerprintFromSerialized`.
+- `prototypes/dropin/example.js` simulates two ticks, logging serialization + fingerprint on each to prove deterministic batching.
+- The prototype validates the DOM-equivalent + adapter approach and confirms why DOM monkey-patching is still too brittle for this phase.
+
 ### Blockers to watch
 - Third-party widgets that demand real DOM hooks will bypass the guard.
 - Event propagation differences between virtual host and real DOM may need bridging (out of scope for first prototype).
-
