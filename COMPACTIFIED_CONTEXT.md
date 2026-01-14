@@ -13,3 +13,4 @@ JavaCrust context sync (local)
 - Phase 2 execution (2026-01-14): completed `02-02-PLAN.md` with patch ops, effect queue, scheduler enforcing single-commit ticks, and engine batching store updates into patch batches.
 - Phase 3 context (2026-01-14): captured JS host integration vision in `.planning/phases/03-js-host-integration/03-CONTEXT.md`.
 - Phase 3 execution (2026-01-14): completed `03-01-PLAN.md` with JS host DOM-equivalent model, patch applier (EnsureNode/SetText/SetAttr/AppendChild/Remove), mutation guard, and one-commit-per-tick runner plus tests.
+- Phase 3 execution (2026-01-14): completed `03-02-PLAN.md` with deterministic replay + SHA-256 fingerprint, rollback/fallback no-op enforcement, mutation guards, and host-core API doc.
