@@ -5,22 +5,21 @@ use std::rc::Rc;
 use rquickjs::{Context, Ctx, Error, Object, Runtime};
 use rquickjs::prelude::{Func, Rest};
 
+use crate::transaction::{CommitOutcome, Transaction};
 use crate::EffectRecord;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionResult {
-    pub effects: Vec<EffectRecord>,
-    pub began: bool,
-    pub committed: bool,
-    pub rolled_back: bool,
+    pub committed_effects: Vec<EffectRecord>,
+    pub pending_effects: Vec<EffectRecord>,
+    pub commit_count: usize,
+    pub rollback_count: usize,
 }
 
-#[derive(Default)]
 struct RunnerState {
-    effects: Vec<EffectRecord>,
-    in_transaction: bool,
-    committed: bool,
-    rolled_back: bool,
+    transaction: Transaction,
+    commit_count: usize,
+    rollback_count: usize,
 }
 
 pub struct HarnessRunner {
@@ -31,9 +30,21 @@ pub struct HarnessRunner {
 
 impl HarnessRunner {
     pub fn new() -> Result<Self, Error> {
+        Self::with_forbidden_ops(["forbidden_op"])
+    }
+
+    pub fn with_forbidden_ops<I, S>(ops: I) -> Result<Self, Error>
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
         let runtime = Runtime::new()?;
         let context = Context::full(&runtime)?;
-        let state = Rc::new(RefCell::new(RunnerState::default()));
+        let state = Rc::new(RefCell::new(RunnerState {
+            transaction: Transaction::new(ops),
+            commit_count: 0,
+            rollback_count: 0,
+        }));
 
         context.with(|ctx| register_host(ctx, Rc::clone(&state)))?;
 
@@ -46,14 +57,17 @@ impl HarnessRunner {
 
     pub fn run_fixture<P: AsRef<Path>>(&mut self, path: P) -> Result<ExecutionResult, Error> {
         self.context.with(|ctx| ctx.eval_file::<(), _>(path.as_ref()))?;
+        Ok(self.snapshot())
+    }
 
+    fn snapshot(&self) -> ExecutionResult {
         let state = self.state.borrow();
-        Ok(ExecutionResult {
-            effects: state.effects.clone(),
-            began: state.in_transaction,
-            committed: state.committed,
-            rolled_back: state.rolled_back,
-        })
+        ExecutionResult {
+            committed_effects: state.transaction.committed_effects().to_vec(),
+            pending_effects: state.transaction.pending_effects().to_vec(),
+            commit_count: state.commit_count,
+            rollback_count: state.rollback_count,
+        }
     }
 }
 
@@ -64,10 +78,7 @@ fn register_host<'js>(ctx: Ctx<'js>, state: Rc<RefCell<RunnerState>>) -> Result<
     host.set(
         "begin",
         Func::from(move || -> Result<(), Error> {
-            let mut state = begin_state.borrow_mut();
-            state.in_transaction = true;
-            state.committed = false;
-            state.rolled_back = false;
+            begin_state.borrow_mut().transaction.begin()?;
             Ok(())
         }),
     )?;
@@ -77,15 +88,10 @@ fn register_host<'js>(ctx: Ctx<'js>, state: Rc<RefCell<RunnerState>>) -> Result<
         "commit",
         Func::from(move || -> Result<(), Error> {
             let mut state = commit_state.borrow_mut();
-            if !state.in_transaction {
-                return Err(Error::new_from_js_message(
-                    "host",
-                    "runner",
-                    "commit without begin",
-                ));
+            match state.transaction.commit()? {
+                CommitOutcome::Committed(_) => state.commit_count += 1,
+                CommitOutcome::RolledBack => state.rollback_count += 1,
             }
-            state.in_transaction = false;
-            state.committed = true;
             Ok(())
         }),
     )?;
@@ -95,16 +101,8 @@ fn register_host<'js>(ctx: Ctx<'js>, state: Rc<RefCell<RunnerState>>) -> Result<
         "rollback",
         Func::from(move || -> Result<(), Error> {
             let mut state = rollback_state.borrow_mut();
-            if !state.in_transaction {
-                return Err(Error::new_from_js_message(
-                    "host",
-                    "runner",
-                    "rollback without begin",
-                ));
-            }
-            state.effects.clear();
-            state.in_transaction = false;
-            state.rolled_back = true;
+            state.transaction.rollback()?;
+            state.rollback_count += 1;
             Ok(())
         }),
     )?;
@@ -113,16 +111,8 @@ fn register_host<'js>(ctx: Ctx<'js>, state: Rc<RefCell<RunnerState>>) -> Result<
     host.set(
         "effect",
         Func::from(move |op: String, args: Rest<String>| -> Result<(), Error> {
-            let mut state = effect_state.borrow_mut();
-            if !state.in_transaction {
-                return Err(Error::new_from_js_message(
-                    "host",
-                    "runner",
-                    "effect outside transaction",
-                ));
-            }
-            state.effects.push(EffectRecord { op, args: args.0 });
-            Ok(())
+            let effect = EffectRecord { op, args: args.0 };
+            effect_state.borrow_mut().transaction.record_effect(effect)
         }),
     )?;
 
