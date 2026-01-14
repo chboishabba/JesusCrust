@@ -1,5 +1,5 @@
 import { createDropInHost } from './adapter.js';
-import { createRunner } from '../packages/js-host/src/runner.js';
+import { createRunner } from '../../packages/js-host/src/runner.js';
 
 const host = createDropInHost();
 host.beginTick();

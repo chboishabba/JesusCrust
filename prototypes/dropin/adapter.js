@@ -119,5 +119,8 @@ export function createDropInHost() {
     commit,
     addEventListener,
     dispatchEvent,
+    rollback,
+    layoutRead,
+    getLastBatch,
   };
 }
