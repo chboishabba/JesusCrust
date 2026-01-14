@@ -7,6 +7,7 @@ export function createDropInHost() {
   const runner = createRunner();
   let pendingOps = [];
   let inTick = false;
+  const listeners = new Map();
 
   function beginTick() {
     runner.beginTick();
@@ -54,5 +55,21 @@ export function createDropInHost() {
     return { serialized, fingerprint };
   }
 
-  return { beginTick, ensureNode, setText, setAttr, appendChild, commit };
+  function addEventListener(nodeId, type, handler) {
+    const key = `${nodeId}:${type}`;
+    const handlers = listeners.get(key) ?? [];
+    handlers.push(handler);
+    listeners.set(key, handlers);
+  }
+
+  function dispatchEvent(nodeId, type, detail = {}) {
+    const key = `${nodeId}:${type}`;
+    const handlers = listeners.get(key) || [];
+    const event = { type, detail };
+    for (const handler of handlers) {
+      handler(event);
+    }
+  }
+
+  return { beginTick, ensureNode, setText, setAttr, appendChild, commit, addEventListener, dispatchEvent };
 }

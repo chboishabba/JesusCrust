@@ -52,6 +52,7 @@ completed: 2026-01-14
 - Built `prototypes/dropin/adapter.js` to queue DOM-like writes into PatchOps and commit via js-host runner.
 - Added `prototypes/dropin/example.js` showing two ticks with deterministic serialization and fingerprint logs.
 - Extended discovery notes to describe the prototype and link to the adapter.
+- Demonstrated event bridging by registering a click listener and dispatching widget events after each tick, proving third-party hooks can run without breaking the commit semantics.
 
 ## Task Commits
 
