@@ -4,5 +4,9 @@
   "type": "module",
   "dependencies": {
     "preact": "^10.15.1"
+  },
+  "scripts": {
+    "conformance": "node microtask-test.js && node mutation-test.js && node identity-test.js && node rollback-test.js && node replay-test.js && node stateful-test.js && node keyed-test.js && node event-state-loop-test.js && node conditional-keyed-test.js && node nested-keyed-test.js && node fallback-diagnostics-test.js && node virtualization-test.js && node token-guard-test.js && node preact-example.js",
+    "test": "npm run conformance"
   }
 }
