@@ -10,6 +10,7 @@ export function createDropInHost() {
   const listeners = new Map();
   const identity = new Map([['root', 1]]);
   let nextId = 2;
+  let lastBatch = null;
 
   function beginTick() {
     runner.beginTick();
@@ -69,6 +70,8 @@ export function createDropInHost() {
     const serialized = runner.commitBatch(batch);
     const fingerprint = fingerprintFromSerialized(serialized);
     inTick = false;
+    lastBatch = { metaKind: 'commit', ops: pendingOps.map((op) => ({ ...op })) };
+    pendingOps = [];
     return { serialized, fingerprint };
   }
 
@@ -86,6 +89,24 @@ export function createDropInHost() {
     for (const handler of handlers) {
       handler(event);
     }
+  }
+
+  function rollback(reason) {
+    if (!inTick) {
+      throw new Error('Tick not started for rollback');
+    }
+    pendingOps = [];
+    const serialized = runner.commitBatch({ metaKind: 'rollback', ops: [] });
+    inTick = false;
+    return serialized;
+  }
+
+  function layoutRead() {
+    return rollback('layout read');
+  }
+
+  function getLastBatch() {
+    return lastBatch;
   }
 
   return {

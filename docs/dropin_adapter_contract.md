@@ -40,3 +40,9 @@ Any renderer hooking into this adapter agrees to:
 5. Fire events only via `dispatchEvent` after commit.
 
 Breaking any rule risks violating the core D0 model. Every proof run (`example.js`, `framework-example.js`, and the tests) maintains these invariants.
+
+## Invariants to preserve
+
+1. **Single-commit invariant:** exactly one `commit()` may be called per `beginTick()`. Calling `commit()` twice without a new tick throws.
+2. **Event-phase invariant:** event handlers (registered via `addEventListener`) only run after `commit()` completes. They never run during the execution phase.
+3. **Rollback invariant:** any barrier or unsupported read must trigger a rollback (`metaKind: 'rollback'`) with no DOM mutation, leaving the pre-commit state intact.
