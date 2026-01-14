@@ -15,6 +15,30 @@ export class DomModel {
     this.mutationAllowed = false;
   }
 
+  static fromSerialized(serialized) {
+    const data = JSON.parse(serialized);
+    const model = new DomModel();
+    for (const item of data) {
+      const node = new DomNode(item.id, item.tag);
+      node.text = item.text;
+      for (const [name, value] of item.attrs) {
+        node.attrs.set(name, value);
+      }
+      node.children = [...item.children];
+      model.nodes.set(node.id, node);
+    }
+
+    for (const item of data) {
+      if (item.parent !== null) {
+        const node = model.nodes.get(item.id);
+        const parent = model.nodes.get(item.parent);
+        node.parent = parent;
+      }
+    }
+
+    return model;
+  }
+
   runMutating(fn) {
     const previous = this.mutationAllowed;
     this.mutationAllowed = true;
@@ -124,4 +148,8 @@ export class DomModel {
 
 export function createDomModel() {
   return new DomModel();
+}
+
+export function createDomModelFromSerialized(serialized) {
+  return DomModel.fromSerialized(serialized);
 }
