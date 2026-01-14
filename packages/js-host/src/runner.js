@@ -27,7 +27,18 @@ export class HostRunner {
       throw new Error('Tick already committed');
     }
 
-    this.dom.runMutating(() => applyPatchBatch(this.dom, batch));
+    const metaKind = batch?.metaKind ?? 'commit';
+    const ops = batch?.ops ?? [];
+
+    if (metaKind === 'commit') {
+      this.dom.runMutating(() => applyPatchBatch(this.dom, batch));
+    } else {
+      if (ops.length > 0) {
+        throw new Error('Rollback/fallback batch must not carry ops');
+      }
+      // No mutation performed for rollback/fallback.
+    }
+
     this.committed = true;
     this.inTick = false;
     return this.dom.serialize();
