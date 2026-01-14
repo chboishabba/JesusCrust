@@ -12,8 +12,6 @@ export function createView(label, color) {
 }
 
 export function renderView(host, view) {
-  const processed = { nextId: 2 };
-
   function applyProps(nodeId, node) {
     for (const [key, value] of Object.entries(node.props)) {
       if (key.startsWith('on') && typeof value === 'function') {
@@ -25,28 +23,29 @@ export function renderView(host, view) {
     }
   }
 
-  function patchChildren(parentId, node) {
-    for (const child of node.children) {
+  function patchChildren(parentId, node, path) {
+    for (let index = 0; index < node.children.length; index += 1) {
+      const child = node.children[index];
       if (typeof child === 'object') {
-        const childId = processed.nextId++;
-        host.ensureNode(childId, child.type);
+        const key = `${path}:${child.props.key ?? index}`;
+        const childId = host.ensureNodeWithKey(key, child.type);
         applyProps(childId, child);
         const textChildren = child.children.filter((c) => typeof c === 'string');
         if (textChildren.length > 0) {
           host.setText(childId, textChildren.join(''));
         }
         host.appendChild(parentId, childId);
-        patchChildren(childId, child);
+        patchChildren(childId, child, key);
       }
     }
   }
 
-  const rootId = 1;
-  host.ensureNode(rootId, view.type);
+  const rootKey = 'root';
+  const rootId = host.ensureNodeWithKey(rootKey, view.type);
   applyProps(rootId, view);
   const textChildren = view.children.filter((child) => typeof child === 'string');
   if (textChildren.length > 0) {
     host.setText(rootId, textChildren.join(''));
   }
-  patchChildren(rootId, view);
+  patchChildren(rootId, view, rootKey);
 }

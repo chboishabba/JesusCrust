@@ -8,6 +8,8 @@ export function createDropInHost() {
   let pendingOps = [];
   let inTick = false;
   const listeners = new Map();
+  const identity = new Map([['root', 1]]);
+  let nextId = 2;
 
   function beginTick() {
     runner.beginTick();
@@ -18,6 +20,21 @@ export function createDropInHost() {
   function ensureNode(nodeId, tag) {
     checkTick();
     pendingOps.push(ensurePatch('EnsureNode', { nodeId, tag }));
+    return nodeId;
+  }
+
+  function ensureNodeWithKey(key, tag) {
+    checkTick();
+    if (!key) {
+      throw new Error('Key required for identity tracking');
+    }
+    let nodeId = identity.get(key);
+    if (!nodeId) {
+      nodeId = nextId++;
+      identity.set(key, nodeId);
+    }
+    pendingOps.push(ensurePatch('EnsureNode', { nodeId, tag }));
+    return nodeId;
   }
 
   function setText(nodeId, value) {
@@ -71,5 +88,15 @@ export function createDropInHost() {
     }
   }
 
-  return { beginTick, ensureNode, setText, setAttr, appendChild, commit, addEventListener, dispatchEvent };
+  return {
+    beginTick,
+    ensureNode,
+    ensureNodeWithKey,
+    setText,
+    setAttr,
+    appendChild,
+    commit,
+    addEventListener,
+    dispatchEvent,
+  };
 }
