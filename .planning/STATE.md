@@ -5,14 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-01-14)
 
 **Core value:** Deliver deterministic, batched UI commits that keep the main thread responsive under heavy update pressure.
-**Current focus:** Phase 1: Execution Harness
+**Current focus:** Phase 2: Rust/WASM Core
 
 ## Current Position
 
-Phase: 1 of 4 (Execution Harness)
-Plan: 1 of 1 in current phase
-Status: Phase complete
-Last activity: 2026-01-14 — completed 01-01-PLAN.md
+Phase: 2 of 4 (Rust/WASM Core)
+Plan: 1 of 2 in current phase
+Status: Planning
+Last activity: 2026-01-14 — started Phase 2 planning
 
 Progress: [██░░░░░░░░] 16%
 
