@@ -1,0 +1,8 @@
+/home/c/Documents/code/JesusCrust/target/debug/deps/shlex-498d29daf4da4fc6.d: /home/c/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/shlex-1.3.0/src/lib.rs /home/c/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/shlex-1.3.0/src/bytes.rs
+
+/home/c/Documents/code/JesusCrust/target/debug/deps/libshlex-498d29daf4da4fc6.rlib: /home/c/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/shlex-1.3.0/src/lib.rs /home/c/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/shlex-1.3.0/src/bytes.rs
+
+/home/c/Documents/code/JesusCrust/target/debug/deps/libshlex-498d29daf4da4fc6.rmeta: /home/c/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/shlex-1.3.0/src/lib.rs /home/c/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/shlex-1.3.0/src/bytes.rs
+
+/home/c/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/shlex-1.3.0/src/lib.rs:
+/home/c/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/shlex-1.3.0/src/bytes.rs:
