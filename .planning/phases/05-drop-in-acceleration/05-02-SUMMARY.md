@@ -55,6 +55,7 @@ completed: 2026-01-14
 - Demonstrated event bridging by registering a click listener and dispatching widget events after each tick, proving third-party hooks can run without breaking the commit semantics.
 - Added `prototypes/dropin/framework.js` / `framework-example.js` to render a React-style view tree through the adapter, showing how a real renderer can drive commits while respecting the host contract.
 - Added microtask/mutation/identity sanity tests (`microtask-test.js`, `mutation-test.js`, `identity-test.js`) and gave the prototype its own contract document (`docs/dropin_adapter_contract.md`).
+- Added deterministic replay test (`replay-test.js`) and rollback/barrier test (`rollback-test.js`) to prove batches replay identically and forbidden reads rollback safely.
 
 ## Task Commits
 
