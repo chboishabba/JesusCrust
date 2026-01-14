@@ -37,7 +37,7 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 02-01: Core store and dependency graph
+- [x] 02-01: Core store and dependency graph
 - [ ] 02-02: Scheduler + patch op serialization
 
 ### Phase 3: JS Host Integration
@@ -67,6 +67,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Execution Harness | 1/1 | Complete | 2026-01-14 |
-| 2. Rust/WASM Core | 0/2 | Not started | - |
+| 2. Rust/WASM Core | 1/2 | In progress | - |
 | 3. JS Host Integration | 0/2 | Not started | - |
 | 4. Developer Experience | 0/1 | Not started | - |
