@@ -14,7 +14,7 @@ None
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Execution Harness** - QuickJS-driven harness with fake DOM, effect log, and deterministic replay.
+- [x] **Phase 1: Execution Harness** - QuickJS-driven harness with fake DOM, effect log, and deterministic replay.
 - [ ] **Phase 2: Rust/WASM Core** - Store, dependency graph, scheduler, and patch op generation.
 - [ ] **Phase 3: JS Host Integration** - JS host applies patch ops and validates batching boundary.
 - [ ] **Phase 4: Developer Experience** - Public API sketch, docs, and example scenarios.
