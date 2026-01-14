@@ -47,7 +47,7 @@ Plans:
 **Plans**: TBD
 
 Plans:
-- [ ] 03-01: JS host runner and patch applier
+- [x] 03-01: JS host runner and patch applier
 - [ ] 03-02: Host-side constraints + debug tooling
 
 ### Phase 4: Developer Experience
@@ -68,5 +68,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 |-------|----------------|--------|-----------|
 | 1. Execution Harness | 1/1 | Complete | 2026-01-14 |
 | 2. Rust/WASM Core | 2/2 | Complete | 2026-01-14 |
-| 3. JS Host Integration | 0/2 | Not started | - |
+| 3. JS Host Integration | 1/2 | In progress | - |
 | 4. Developer Experience | 0/1 | Not started | - |
