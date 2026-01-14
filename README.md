@@ -18,3 +18,9 @@ The core idea is to keep DOM writes in JS while moving state graphs, diffing, an
 ## Planning
 
 Project planning artifacts live in `.planning/`.
+
+## Getting Started (Phase 3)
+
+- API surface: `docs/api.md`
+- Host-core contract: `docs/host-core-api.md`
+- Runnable example: `node examples/quickstart.js`
