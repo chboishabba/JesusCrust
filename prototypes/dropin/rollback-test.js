@@ -10,6 +10,12 @@ function run() {
   host.beginTick();
   host.setText(rootId, 'should rollback');
   host.layoutRead();
+  const lastBatch = host.getLastBatch();
+  if (!lastBatch || lastBatch.metaKind !== 'rollback') {
+    throw new Error('Expected rollback batch after layoutRead');
+  }
+
+  host.beginTick();
   const after = host.commit();
 
   if (before.serialized !== after.serialized) {
