@@ -46,8 +46,8 @@
 ### Prototype notes
 - `prototypes/dropin/adapter.js` exposes `createDropInHost()` that buffers writes (EnsureNode, SetText, SetAttr, AppendChild) before invoking the js-host runner's `beginTick`/`commitBatch`. It reuses `fingerprintFromSerialized`.
 - `prototypes/dropin/example.js` simulates two ticks, logging serialization + fingerprint on each to prove deterministic batching.
-- The prototype validates the DOM-equivalent + adapter approach and confirms why DOM monkey-patching is still too brittle for this phase.
-- Example script also registers a click listener on node 1 and dispatches a simulated widget event after each commit to exercise the adapter’s event bridge and show third-party widgets can hook without mutating outside the tick.
+- `prototypes/dropin/framework.js` / `framework-example.js` render a React-like view tree into the adapter: attributes, text, and event listeners are applied via host ops, and `addEventListener` captures widget events during commit.
+- The prototype validates the DOM-equivalent + adapter approach, proves event bridging for widgets, and confirms why DOM monkey-patching is still too brittle for this phase.
 
 ### Blockers to watch
 - Third-party widgets that demand real DOM hooks will bypass the guard.

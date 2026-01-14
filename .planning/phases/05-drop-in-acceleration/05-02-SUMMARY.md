@@ -53,6 +53,7 @@ completed: 2026-01-14
 - Added `prototypes/dropin/example.js` showing two ticks with deterministic serialization and fingerprint logs.
 - Extended discovery notes to describe the prototype and link to the adapter.
 - Demonstrated event bridging by registering a click listener and dispatching widget events after each tick, proving third-party hooks can run without breaking the commit semantics.
+- Added `prototypes/dropin/framework.js` / `framework-example.js` to render a React-style view tree through the adapter, showing how a real renderer can drive commits while respecting the host contract.
 
 ## Task Commits
 

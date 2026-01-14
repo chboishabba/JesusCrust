@@ -15,4 +15,4 @@ JavaCrust context sync (local)
 - Phase 3 execution (2026-01-14): completed `03-01-PLAN.md` with JS host DOM-equivalent model, patch applier (EnsureNode/SetText/SetAttr/AppendChild/Remove), mutation guard, and one-commit-per-tick runner plus tests.
 - Phase 3 execution (2026-01-14): completed `03-02-PLAN.md` with deterministic replay + SHA-256 fingerprint, rollback/fallback no-op enforcement, mutation guards, and host-core API doc.
 - Phase 4 execution (2026-01-14): completed `04-01-PLAN.md` with API surface doc, runnable quickstart, and README entry points.
-- Phase 5 execution (2026-01-14): completed discovery plus prototype via `prototypes/dropin/adapter.js` + `prototypes/dropin/example.js`.
+- Phase 5 execution (2026-01-14): completed discovery plus prototype via `prototypes/dropin/adapter.js`, `example.js`, and `framework-example.js`.
