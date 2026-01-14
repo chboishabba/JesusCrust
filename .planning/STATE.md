@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-01-14)
 
 **Core value:** Deliver deterministic, batched UI commits that keep the main thread responsive under heavy update pressure.
-**Current focus:** Milestone complete
+**Current focus:** Phase 5: Drop-in Acceleration Research
 
 ## Current Position
 
-Phase: 4 of 4 (Developer Experience)
-Plan: 1 of 1 in current phase
-Status: Phase complete
-Last activity: 2026-01-14 — completed 04-01-PLAN.md
+Phase: 5 of 5 (Drop-in Acceleration Research)
+Plan: 0 of 1 in current phase
+Status: Not started
+Last activity: 2026-01-14 — milestone v0.1 tagged
 
-Progress: [██████████] 100%
+Progress: [████████░░] 86%
 
 ## Performance Metrics
 
@@ -31,6 +31,7 @@ Progress: [██████████] 100%
 | 2 | 2 | 55 min | 28 min |
 | 3 | 2 | 22 min | 11 min |
 | 4 | 1 | 15 min | 15 min |
+| 5 | 0 | - | - |
 
 **Recent Trend:**
 - Last 5 plans: 3 min, 14 min, 8 min, 46 min, 15 min
@@ -63,5 +64,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-01-14 04:55
-Stopped at: Completed 04-01-PLAN.md
+Stopped at: Milestone v0.1 tagged; ready to start 05-01-PLAN.md
 Resume file: None

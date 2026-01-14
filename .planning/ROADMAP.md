@@ -11,13 +11,14 @@ None
 ## Phases
 
 **Phase Numbering:**
-- Integer phases (1, 2, 3): Planned milestone work
+- Integer phases (1, 2, 3, 4, 5): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Execution Harness** - QuickJS-driven harness with fake DOM, effect log, and deterministic replay.
 - [ ] **Phase 2: Rust/WASM Core** - Store, dependency graph, scheduler, and patch op generation.
 - [ ] **Phase 3: JS Host Integration** - JS host applies patch ops and validates batching boundary.
 - [ ] **Phase 4: Developer Experience** - Public API sketch, docs, and example scenarios.
+- [ ] **Phase 5: Drop-in Acceleration Research** - Investigate feasibility of drop-in acceleration for existing apps (research track).
 
 ## Phase Details
 
@@ -59,6 +60,15 @@ Plans:
 Plans:
 - [x] 04-01: API sketch, docs, and examples
 
+### Phase 5: Drop-in Acceleration Research (INSERTED)
+**Goal**: Assess feasibility and constraints for drop-in acceleration of existing apps using the JesusCrust runtime.
+**Depends on**: Phase 3/4 (semantics + API defined)
+**Research**: Deep (integration/compat)
+**Plans**: TBD
+
+Plans:
+- [ ] 05-01: Research plan (discovery + constraints)
+
 ## Progress
 
 **Execution Order:**
@@ -70,3 +80,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 2. Rust/WASM Core | 2/2 | Complete | 2026-01-14 |
 | 3. JS Host Integration | 2/2 | Complete | 2026-01-14 |
 | 4. Developer Experience | 1/1 | Complete | 2026-01-14 |
+| 5. Drop-in Acceleration Research | 0/1 | Not started | - |
