@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "Phase 6 Guarded Host",
+  "version": "0.1.0",
+  "description": "Serves the drop-in adapter contract with guardrails, telemetry, and policy controls.",
+  "action": {
+    "default_title": "Guarded Host",
+    "default_popup": "ui.html"
+  },
+  "permissions": ["storage"],
+  "host_permissions": ["<all_urls>"],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["host-entry.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["ui.html", "ui.js"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

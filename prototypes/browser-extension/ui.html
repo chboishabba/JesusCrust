@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Phase 6 Guarded Host</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #0b1221;
+        color: #f5f7ff;
+      }
+      header {
+        padding: 1rem;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #10183b;
+      }
+      main {
+        padding: 1.5rem;
+        display: grid;
+        gap: 1rem;
+      }
+      section {
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 1rem;
+        border-radius: 0.75rem;
+        background: rgba(16, 24, 59, 0.8);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 1rem;
+      }
+      button {
+        background: #3b82f6;
+        border: none;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 0.5rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      pre {
+        white-space: pre-wrap;
+      }
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.25rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+      .status-pill.running {
+        background: #09f88f;
+        color: #04260c;
+      }
+      .status-pill.stopped {
+        background: #fb7185;
+        color: #1c0f15;
+      }
+      .stack {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .work-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 0.9rem;
+      }
+      .work-row span {
+        min-width: 2rem;
+      }
+      .work-bar {
+        flex: 1;
+        height: 0.6rem;
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 999px;
+        position: relative;
+        overflow: hidden;
+      }
+      .work-fill {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, #3b82f6, #38bdf8);
+        transform-origin: left center;
+        width: 0;
+      }
+      .selector-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 0.5rem;
+      }
+      .selector-stat {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        font-size: 0.9rem;
+      }
+      .health-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.5rem;
+      }
+      .health-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+      }
+      .fingerprint-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.5rem;
+      }
+      .muted {
+        color: rgba(245, 247, 255, 0.7);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div>
+        <strong>Guarded Host</strong>
+        <div class="muted" id="origin-label">Origin: (awaiting host...)</div>
+      </div>
+      <span id="running-pill" class="status-pill stopped">Stopped</span>
+    </header>
+    <main>
+      <section>
+        <h2>Status</h2>
+        <div class="stack">
+          <div id="fallback-reason">Fallback status: none</div>
+          <div id="last-commit">Last commit: none</div>
+          <div id="last-batch">Last batch: not available</div>
+        </div>
+      </section>
+      <section class="grid">
+        <article>
+          <h3>Telemetry</h3>
+          <div class="stack">
+            <div id="tick-count">Ticks: 0</div>
+            <div id="commit-count">Commits: 0</div>
+            <div id="fallback-count">Fallbacks: 0</div>
+          </div>
+        </article>
+        <article>
+          <h3>Last commit</h3>
+          <div class="stack">
+            <div id="commit-duration">Duration: —</div>
+            <div id="commit-patch-size">Patch size: —</div>
+            <div id="commit-fingerprint">Fingerprint: —</div>
+          </div>
+        </article>
+      </section>
+      <section>
+        <h2>Work stack</h2>
+        <div class="stack">
+          <div class="work-row">
+            <span>Script</span>
+            <div class="work-bar">
+              <span id="work-script-bar" class="work-fill"></span>
+            </div>
+            <span id="work-script">0ms</span>
+          </div>
+          <div class="work-row">
+            <span>Style</span>
+            <div class="work-bar">
+              <span id="work-style-bar" class="work-fill"></span>
+            </div>
+            <span id="work-style">0ms</span>
+          </div>
+          <div class="work-row">
+            <span>Layout</span>
+            <div class="work-bar">
+              <span id="work-layout-bar" class="work-fill"></span>
+            </div>
+            <span id="work-layout">0ms</span>
+          </div>
+          <div class="work-row">
+            <span>Render</span>
+            <div class="work-bar">
+              <span id="work-render-bar" class="work-fill"></span>
+            </div>
+            <span id="work-render">0ms</span>
+          </div>
+          <div class="work-row">
+            <span>Total</span>
+            <div class="work-bar">
+              <span id="work-total-bar" class="work-fill"></span>
+            </div>
+            <span id="work-total">0ms</span>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Selectors</h2>
+        <div class="selector-grid">
+          <div class="selector-stat">
+            <strong>Selectors evaluated</strong>
+            <span id="selector-count">0</span>
+          </div>
+          <div class="selector-stat">
+            <strong>Elements invalidated</strong>
+            <span id="selector-elements">0</span>
+          </div>
+          <div class="selector-stat">
+            <strong>Nodes touched</strong>
+            <span id="selector-nodes">0</span>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Guardrail health</h2>
+        <div class="health-grid">
+          <div class="health-card">
+            <strong>Fallback rate</strong>
+            <span id="guardrail-rate">0 per 1k ticks</span>
+          </div>
+          <div class="health-card">
+            <strong>Fallback count</strong>
+            <span id="guardrail-count">0</span>
+          </div>
+          <div class="health-card">
+            <strong>Last fallback reason</strong>
+            <span id="guardrail-reason">none</span>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Fingerprint stability</h2>
+        <div class="fingerprint-grid">
+          <div class="health-card">
+            <strong>Latest fingerprint</strong>
+            <span id="fingerprint-value">—</span>
+          </div>
+          <div class="health-card">
+            <strong>Stability</strong>
+            <span id="fingerprint-stability">unknown</span>
+          </div>
+        </div>
+      </section>
+      <section>
+        <h2>Diagnostics</h2>
+        <pre id="diagnostics">Waiting for diagnostics...</pre>
+      </section>
+      <section>
+        <h2>Control</h2>
+        <div class="grid">
+          <div>
+            <label for="fallback-reason-input">Fallback reason</label>
+            <input id="fallback-reason-input" type="text" placeholder="Example: policy violation" />
+            <button id="fallback-button">Request fallback</button>
+          </div>
+          <div>
+            <label>Reset host</label>
+            <button id="reset-button">Release fallback</button>
+          </div>
+        </div>
+      </section>
+    </main>
+    <!-- Load the diagnostics UI as an ES module so top-level imports succeed. -->
+    <script type="module" src="./ui.js?browser=1"></script>
+  </body>
+</html>

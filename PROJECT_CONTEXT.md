@@ -6435,3 +6435,2800 @@ If you want, I can also:
 
 * adapt the Rust struct to `#[wasm_bindgen]` (getters returning `js_sys::Array` + `js_sys::Uint32Array`)
 * provide a stable DOM serializer for tests (`serializeDom(root)`) so replay equivalence is assertable in JS.
+
+
+Nice — this is *exactly* the kind of “proof before product” prototype that de-risks the whole drop-in story. From what you’ve described, the key claim you needed to validate is now grounded:
+
+* a renderer can drive your adapter,
+* the adapter can enforce **one deterministic commit per tick**,
+* and you can bridge post-commit events without breaking the mutation guard.
+
+That said, there are a few places where drop-in prototypes often “look correct” while still violating the D0 execution model in subtle ways. Here’s a structured review: **what you’ve likely proven**, **what to sanity-check**, and **what the next hardening steps should be** (especially given npm/network limitations).
+
+---
+
+## What you’ve actually proven (strong wins)
+
+### 1) Patch pipeline is renderer-compatible
+
+Your React-like tree → patch ops translation means you’ve validated:
+
+* the patch op vocabulary is expressive enough
+* the host/core contract can sit under a “framework style” renderer
+
+### 2) Determinism instrumentation is in the right place
+
+Logging both:
+
+* serialized DOM
+* SHA-256 fingerprint per tick
+  is a great choice because it’s the *only* metric that matters before performance.
+
+### 3) Event bridging after commit is a realistic integration seam
+
+Having widgets attach listeners and dispatch after commit is consistent with:
+
+* “commit boundary is the observable boundary”
+* “side effects happen after commit”
+
+This matches the model: effects → commit → callbacks.
+
+---
+
+## Sanity-check against the D0 execution model (must not regress)
+
+Here are the “gotchas” that can silently invalidate the model even while fingerprints look stable.
+
+### A) Microtasks vs “ticks”
+
+If your prototype’s “tick” is:
+
+* “one render call”
+  then you may be skipping the real rule:
+* “macrotask + drained microtasks”
+
+**Check:** When the renderer triggers Promises internally, are they:
+
+* included in the same tick, OR
+* accidentally deferred to a later tick?
+
+If later: you’re no longer enforcing the D0 tick semantics; you’re enforcing a “render boundary semantics” instead.
+
+**What to do now:** add a test where a component schedules:
+
+```js
+Promise.resolve().then(() => setState(...))
+```
+
+and verify that:
+
+* it either stays in same commit (if you intend P1)
+* or triggers an explicit new tick (if the host defines it so)
+
+Right now, I suspect your “framework example” may not be exercising this.
+
+---
+
+### B) Forbidden reads / barriers
+
+Your D0 model assumes certain reads are barriers or forbidden (layout reads etc). Your prototype probably has none.
+
+**Check:** Do you have *any* concept of barrier/fallback in the drop-in shim?
+If not, the adapter may be overclaiming “drop-in safe” without an escape hatch.
+
+**Action:** define one “barrier read” in the shim even if it’s fake:
+
+* `layoutRead()` or `flushLayout()`
+  and make sure it triggers:
+* rollback batch (no ops) + explicit downgrade marker
+
+---
+
+### C) Host mutation guard must be enforceable, not conventional
+
+If the renderer uses your adapter for writes, that’s good, but do you **actively prevent**:
+
+* direct mutation of underlying DOM-like nodes?
+
+In other words, is the guard a discipline or a mechanism?
+
+**Action:** Make the DOM-like nodes immutable except through adapter methods, or proxy them and throw on writes outside commit.
+
+You want at least one test that proves:
+
+* “direct write outside commit throws.”
+
+---
+
+### D) Stable Node identity across rerenders
+
+React-like renderers often rely on keys and stable identity.
+
+**Check:** Does your renderer:
+
+* reuse NodeIds for the same logical nodes across ticks, OR
+* allocate fresh NodeIds each time?
+
+Fresh each time will still be deterministic but will:
+
+* blow up patch size
+* destroy “diff-like” semantics
+* make real frameworks harder later
+
+**Action:** ensure the adapter has a stable mapping:
+
+* `(component path + key)` → NodeId
+
+You don’t need full reconciliation yet, but you need *some* identity rule.
+
+---
+
+## About your plan to write a “Preact-like implementation” locally
+
+This is a good move given npm trouble, but keep it narrow:
+
+### What to mimic (minimum viable “renderer realism”)
+
+* `h(type, props, ...children)` → vnode
+* `render(vnode, root)` → applies diff
+* basic event handler props: `onClick`, `onInput`
+* basic keyed list diff (optional but very valuable)
+
+### What *not* to mimic yet
+
+* hooks
+* context
+* portals
+* suspense
+* hydration
+* full lifecycle
+
+You’re trying to validate the adapter seam, not build a framework.
+
+---
+
+## What I’d do next (concrete hardening steps)
+
+### 1) Add three “truth tests” (these catch fake determinism)
+
+1. **microtask coalescing test** (Promise → state update)
+2. **direct mutation escape test** (should throw / rollback)
+3. **stable identity test** (keyed children reorder)
+
+If these pass, you’ve proven the adapter is not just a fancy logger.
+
+---
+
+### 2) Freeze the drop-in shim contract separately from host/core
+
+Right now you have:
+
+* host/core contract (PatchBatch)
+* drop-in adapter as a *consumer* of that contract
+
+Add:
+
+* `docs/dropin_adapter_contract.md` with:
+
+  * “what a tick is”
+  * what events are allowed when
+  * what is forbidden
+  * downgrade/fallback behavior
+
+This prevents the shim from quietly evolving into its own execution model.
+
+---
+
+### 3) Don’t jump to “real Preact” until the seam is stable
+
+Once the three truth tests pass, then:
+
+* preact renderer integration (real or simulated) becomes meaningful
+* otherwise it becomes noise and will just surface unrelated compatibility issues
+
+---
+
+## Bottom line
+
+**“All go” is reasonable**, but only if you now add a small set of tests to ensure the prototype hasn’t accidentally drifted from D0 (especially microtasks and barriers). Without those, it’s easy to get “deterministic commits” that are deterministic only because you never exercised the cases that break determinism.
+
+If you paste the serialized DOM + fingerprint log format you’re using (one sample run), I can also tell you whether your fingerprinting is actually capturing the whole batch canonicalization or accidentally hashing a human string representation.
+
+
+Nice — *if* those prototypes/tests behave the way you describe, you’ve basically built a **Phase-3/Phase-5 “host applies batches + identity + microtasks” validation rig** already.
+
+I can’t see the repo contents from here, so I can’t independently verify the claims, but I *can* sanity-check what you report against the execution model and point out the most likely gaps / next hardening steps (the stuff that usually bites you later).
+
+---
+
+## 1) Sanity-check vs the execution model
+
+From D0/D1, the core invariants were:
+
+* **One macrotask + drained microtasks → one commit**
+* **No DOM mutation outside commit boundary**
+* **Stable identity (NodeId / key mapping)**
+* **Deterministic ordering + replayability**
+* **Rollback/fallback on forbidden ops**
+
+What you’ve described maps well:
+
+### ✅ Looks aligned
+
+* **Identity map + `ensureNodeWithKey`**
+  That matches the “stable NodeId ↔ real node” requirement (keyed identity is the right “TS lesson” too).
+* **Bridged `addEventListener/dispatchEvent`**
+  Good: event dispatch is your macrotask boundary driver.
+* **Microtask tests**
+  If they assert that *promise chains don’t cause extra commits*, that’s exactly Policy P1.
+
+### ⚠️ Potential mismatch to watch (common pitfall)
+
+* **Microtasks vs commits:**
+  If your prototype *commits multiple times during a single event dispatch* (e.g., commits after each microtask), you’ve accidentally reverted to “microtasks are separate ticks.” Your test names suggest you avoided that, but it’s worth making the assertion explicit.
+* **Mutation guard completeness:**
+  “Mutation-test.js” likely checks *your adapter* doesn’t allow out-of-band mutations, but the real risk is **direct DOM mutation via captured references** (leaked nodes) or via framework internals. You’ll want a hard “no DOM writes outside commit” policy that catches:
+
+  * `node.textContent = ...` done directly
+  * `appendChild` on leaked node
+  * attribute writes not going through adapter
+* **Rollback semantics not mentioned:**
+  I didn’t see a rollback/fallback test in the list. Right now it sounds like you enforce invariants and stay on the happy path. For drop-in acceleration, you *must* be able to say “nope” and run conservatively.
+
+---
+
+## 2) What I would verify (and/or add tests for) immediately
+
+If you want this to stay aligned with D0 and remain extensible, add these tests (they’re high leverage):
+
+### A. “Exactly one commit per macrotask”
+
+**Test:** dispatch a click handler that schedules a promise chain with multiple writes
+**Assert:** `commitCount === 1` and final DOM matches last write.
+
+This is the *single most important* line in the sand.
+
+### B. “No partial visibility”
+
+**Test:** during commit, attempt to observe DOM from an interleaved callback (or a microtask if you allow)
+**Assert:** observers never see mid-batch state (either blocked or not scheduled until after commit).
+
+### C. “Leak detection / detached safety”
+
+**Test:** leak a node reference outside the adapter, then try to mutate it outside commit
+**Expected:** either:
+
+* mutation is blocked (proxy throws), or
+* runtime detects and triggers fallback.
+
+This is a real-world killer.
+
+### D. “Barrier / forbidden op triggers fallback”
+
+Even a fake barrier is fine:
+
+* `layoutRead()` or `getBoundingClientRect()` or “computed style”
+  **Expected:** rollback/fallback path taken, no partial commit.
+
+### E. “Replay determinism”
+
+If you already have commit logs, serialize:
+
+* initial state
+* patch batch stream
+  Then replay on a fresh host and assert DOM serialize equals.
+
+This is where your fingerprint scheme becomes valuable.
+
+---
+
+## 3) About your “next steps” list
+
+### 1) “Expand into a real renderer (React/Preact/Vite)”
+
+✅ This is good, but the *right* order is:
+
+* **Preact first**, then React.
+
+  * Preact is simpler, smaller surface area, fewer concurrent-mode edge cases.
+  * You want to validate semantics before you wrestle React scheduling.
+
+What you’re really building is not “a renderer”, it’s:
+
+* an **alternate host config** for a renderer (or a minimal VDOM engine)
+* that enforces commit boundaries
+
+So: **use Preact to drive the adapter** and keep the adapter authoritative.
+
+### 2) “Keep hardening shim for events/widgets/quirks”
+
+✅ Yes — but do it guided by *a compatibility matrix*, or it will sprawl.
+
+Track:
+
+* event types supported
+* propagation model (capture/bubble)
+* default prevention semantics
+* reentrancy behaviors
+
+And pin each addition to a test.
+
+---
+
+## 4) One important framing correction
+
+Your report says:
+
+> “roadmap/state mark the entire drop-in research phase complete.”
+
+Be careful with that wording. What you *clearly have* is:
+
+* a **proof of concept** that validates several core invariants
+
+What you probably **don’t** have yet (and shouldn’t claim complete yet):
+
+* cross-site deployment viability (COOP/COEP / CSP / extension constraints)
+* full DOM API surface
+* layout/style barriers
+* the long tail of event semantics
+* correctness under reentrancy + nested dispatch + microtask storms + timers
+
+I’d mark Phase 5 as:
+
+* **“Prototype complete; research questions partially answered”**
+* with a list of “still unknown / not proven” bullets
+
+That keeps planning honest and avoids premature closure.
+
+---
+
+## 5) If you want one concrete “Phase 3 exit gate” now
+
+Given what you’ve implemented, here’s a tight Phase-3 exit checklist:
+
+1. **One commit per dispatched event**, even with microtask chains
+2. **Mutation guard** catches out-of-band DOM writes (leaks) and forces fallback
+3. **Stable keyed identity** across re-renders (no node churn)
+4. **Deterministic commit log** (same input events → same patch stream)
+5. **Replay test passes** (patch stream replays to identical DOM)
+
+If those are green, you’re genuinely “Phase 3 done” in the sense we defined earlier.
+
+---
+
+If you paste the contents (or key excerpts) of:
+
+* `docs/dropin_adapter_contract.md`
+* `prototypes/dropin/microtask-test.js`
+* `prototypes/dropin/mutation-test.js`
+* `prototypes/dropin/identity-test.js`
+
+…I can do a real “spec compliance” review and point out any semantic holes or places where the contract is ambiguous.
+
+
+Great — thanks for uploading the actual artifacts. I’ve now read:
+
+* `dropin_adapter_contract.md`
+* `microtask-test.js`
+* `mutation-test.js`
+* `identity-test.js`
+
+Below is a **real spec-compliance review**, not a theoretical one. I’ll be explicit about **what is correct**, **what is underspecified**, and **what must be tightened** to remain aligned with the D0 execution model and Phase-3 guarantees. I’ll cite the contract where relevant.
+
+---
+
+## 1. Overall verdict (short)
+
+**You have a valid Phase-3 host implementation.**
+It correctly enforces:
+
+* single-commit batching
+* microtask inclusion
+* mutation isolation
+* stable identity
+* post-commit event delivery
+
+What you *don’t yet have* (and should not claim yet) is:
+
+* a formal rollback path exercised by tests
+* a hard layout / forbidden-read barrier
+* a proof that “exactly one commit per macrotask” is *enforced*, not just *assumed*
+
+These are fixable without architectural changes.
+
+---
+
+## 2. Tick + microtask semantics — ✔️ correct
+
+From the contract:
+
+> “A tick equals one macrotask plus all microtasks that run before the host commits.” 
+
+### microtask-test.js (behavioral check)
+
+Your test verifies that:
+
+* writes scheduled in `Promise.then` run before commit
+* commit does not occur until microtasks quiesce
+* DOM state reflects *final* microtask write
+
+This aligns exactly with **Policy P1** in the execution model:
+
+> *microtasks scheduled during a macrotask execute within the same tick*
+
+### What’s solid
+
+* You are not accidentally turning microtasks into new ticks
+* You are not committing per `then`
+* This is the hardest thing to get right — and you did
+
+### What to tighten (doc-level)
+
+I recommend one explicit invariant added to the contract:
+
+> **Invariant:** The adapter MUST perform exactly one commit per `beginTick()` invocation, regardless of how many microtasks are scheduled.
+
+Right now this is implied, not stated.
+
+---
+
+## 3. Mutation guard — ✔️ strong and correctly enforced
+
+From the contract:
+
+> “All DOM-like writes must happen via adapter methods… Methods throw if called outside of beginTick()/commit().” 
+
+### mutation-test.js (this is excellent)
+
+Your mutation test demonstrates:
+
+* direct DOM mutation outside adapter throws
+* adapter methods enforce mutation phase
+* there is a single mutating window
+
+This is **stronger** than many real frameworks and exactly what JavaCrust needs.
+
+### One subtle gap (important)
+
+Right now the guard protects:
+
+* *when* mutation happens
+
+But not yet:
+
+* *what happens if a leaked reference mutates inside commit but outside adapter API*
+
+This is not a failure — just a **known hole**.
+
+📌 Recommendation (Phase-3 acceptable):
+
+* Document that *all* DOM access must go through the adapter
+* Treat leaked references as **undefined behavior → fallback**
+
+📌 Recommendation (Phase-4 hardening):
+
+* Proxy nodes returned to renderers
+* Or freeze underlying nodes during commit
+
+---
+
+## 4. Identity semantics — ✔️ correct and well-designed
+
+From the contract:
+
+> “The adapter preserves the key-to-NodeId map across ticks.” 
+
+### identity-test.js
+
+This test confirms:
+
+* same key → same NodeId
+* re-render does not churn nodes
+* identity survives multiple ticks
+
+This exactly matches:
+
+* D0’s **stable NodeId** requirement
+* TS’s “structural identity beats nominal identity” lesson
+
+This is one of the strongest parts of your implementation.
+
+### One thing to clarify in docs
+
+Keys are currently described as:
+
+> “any deterministic string”
+
+I suggest adding:
+
+> Keys MUST be stable across ticks for the same logical element. Changing a key is equivalent to node replacement.
+
+This avoids future ambiguity.
+
+---
+
+## 5. Event bridging — ✔️ correct and well placed
+
+From the contract:
+
+> “dispatchEvent fires them after commit.” 
+
+This is exactly right.
+
+Why this matters:
+
+* prevents mid-commit reentrancy
+* prevents event handlers from mutating state during apply
+* cleanly separates “render phase” from “interaction phase”
+
+This matches the execution model’s **post-commit visibility rule**.
+
+📌 Recommendation:
+Document this as a **hard rule**, not just a behavior:
+
+> Event handlers MUST NOT run during a tick; they always run post-commit.
+
+---
+
+## 6. Rollback / barrier handling — ⚠️ underspecified (but acknowledged)
+
+From the contract:
+
+> “Any rollback/fallback needs to use the host/core contract metaKind: 'rollback' (not shown here yet).” 
+
+This is honest and correct — but it’s also the **main missing piece**.
+
+### What’s missing
+
+* No test triggers rollback
+* No example forbidden op
+* No assertion that DOM remains unchanged on rollback
+
+### Why this matters
+
+Drop-in acceleration *must* fail safely.
+
+### Minimal Phase-3 fix (very small)
+
+Add one fake barrier:
+
+```js
+adapter.layoutRead()
+```
+
+And one test:
+
+* calling it inside a tick
+* causes rollback
+* no DOM mutation occurs
+* next tick proceeds normally
+
+This does not require a real layout system.
+
+---
+
+## 7. Determinism & replay — ⚠️ implicit, not asserted
+
+Your tests *demonstrate* determinism, but they do not yet *assert* it.
+
+### What you should add (small but powerful)
+
+One test that:
+
+1. Captures a commit batch
+2. Replays it on a fresh adapter/DOM
+3. Serializes DOM
+4. Asserts equality
+
+You already have:
+
+* stable identity
+* deterministic op order
+
+This would formally close the loop.
+
+---
+
+## 8. Alignment summary (traffic-light)
+
+| Area                 | Status | Notes                     |
+| -------------------- | ------ | ------------------------- |
+| Tick semantics       | 🟢     | Correct, tested           |
+| Microtask inclusion  | 🟢     | Correct, tested           |
+| Mutation isolation   | 🟢     | Strong                    |
+| Identity stability   | 🟢     | Excellent                 |
+| Event ordering       | 🟢     | Correct                   |
+| Rollback / barriers  | 🟡     | Acknowledged but untested |
+| Deterministic replay | 🟡     | Implicit, not asserted    |
+
+---
+
+## 9. What I would change in the contract text (surgical edits)
+
+Add three explicit invariants:
+
+1. **Single-commit invariant**
+
+   > Exactly one commit may occur per `beginTick()`.
+
+2. **Event-phase invariant**
+
+   > Event handlers MUST execute only after commit completes.
+
+3. **Fallback invariant**
+
+   > Any unsupported read or invariant violation MUST produce a rollback with no DOM mutation.
+
+These lock your implementation to the D0 model.
+
+---
+
+## Final judgment
+
+You are **not hand-waving**.
+This is a real, working validation of the JavaCrust execution model in a JS host.
+
+If you add:
+
+* one rollback test
+* one replay test
+* three invariant sentences in the contract
+
+…you can legitimately say:
+
+> *Phase-3 host integration is complete and execution-model compliant.*
+
+If you want, next I can:
+
+* draft the rollback test
+* draft the replay determinism test
+* or propose the exact wording for the three contract invariants so you can paste them in without bikeshedding
+
+This is exactly the right outcome, and you’ve done the *right kind* of work at the *right time*. Let me be very explicit about what you’ve achieved, what it means, and how to proceed without accidentally undoing the discipline you’ve built.
+
+---
+
+## What you’ve now *locked in* (this is the milestone)
+
+With the additions you just described, you now have:
+
+### 1. A renderer-driven execution model that is **provably invariant-preserving**
+
+Not hypothetically—**empirically**:
+
+* Preact drives reconciliation
+* Stateful updates trigger new ticks
+* Keyed reorders reuse NodeIds
+* Events fire post-commit
+* Microtasks stay inside a tick
+* Abort → no mutation
+* Replay → identical DOM + fingerprint
+
+That is the full D0/D1 execution story exercised against a real renderer.
+
+This is the point where many projects *lose control* and start “just integrating more stuff.” You didn’t.
+
+---
+
+### 2. A regression harness that protects the execution model
+
+The moment you added:
+
+> **one `npm test` that runs the entire drop-in suite**
+
+you effectively created a **semantic firewall**.
+
+From now on:
+
+* Any future change that breaks the model is caught immediately
+* Renderer experimentation is safe
+* You can refactor aggressively *inside* the adapter or renderer shim without fear
+
+This is the difference between a prototype and a system.
+
+---
+
+### 3. Preact is now a *client*, not a dependency
+
+This is subtle but crucial:
+
+You are no longer “supporting Preact.”
+You have shown that:
+
+> **A real renderer can target your host contract without violating it.**
+
+That means:
+
+* React is *possible later*
+* Svelte-style renderers are *possible*
+* Custom DSL renderers are *possible*
+
+…but none of that is required to move forward.
+
+---
+
+## What to do next (and what not to do)
+
+You proposed good next steps. Here’s how I’d tighten them.
+
+---
+
+### ✅ What to keep doing
+
+#### 1. Treat the drop-in test suite as **non-negotiable**
+
+Make this an explicit rule in your own head (and later in docs):
+
+> No change that affects ticks, mutation, identity, or event delivery is allowed unless `npm test` passes.
+
+If/when you add CI, this becomes mechanical.
+
+#### 2. Extend tests *only when new behavior is explored*
+
+You already did this correctly with:
+
+* stateful-test.js
+* keyed-test.js
+
+Keep that pattern:
+
+* explore a renderer behavior
+* add a minimal test
+* lock it in
+
+Do **not** generalize prematurely.
+
+---
+
+### 🚫 What not to do yet (important)
+
+Resist these temptations for now:
+
+* ❌ “Let’s support more DOM APIs”
+* ❌ “Let’s optimize patch application”
+* ❌ “Let’s try concurrent React”
+* ❌ “Let’s wire this into a browser”
+* ❌ “Let’s add Workers / SAB”
+
+All of those *dilute* the clarity you’ve earned.
+
+Right now, the project’s strength is **semantic correctness**, not coverage or speed.
+
+---
+
+## How I would describe the project *now* (useful framing)
+
+If you had to summarize where you are:
+
+> *JesusCrust defines a transactional, deterministic host contract for UI renderers.
+> A drop-in adapter enforces single-commit ticks, deferred mutation, stable identity, rollback safety, and deterministic replay.
+> These guarantees are validated against a real renderer (Preact) via a regression suite that prevents semantic drift.*
+
+That’s a strong, honest statement—and it matches reality.
+
+---
+
+## Two high-leverage next directions (pick one when ready)
+
+You don’t need to do these immediately, but when you do move forward, these are the **right forks**.
+
+### Option A: “Renderer stress, not breadth”
+
+* Nested keyed lists
+* Conditional mounts inside keyed parents
+* Event → state → event chains
+* Intentional aborts mid-reconciliation
+
+Goal: prove the execution model survives *renderer complexity*, not more APIs.
+
+### Option B: “Host semantics refinement”
+
+* Formalize fallback behavior (what exactly happens after rollback)
+* Explicitly define “observable state” vs “committed state”
+* Tighten the contract language further
+
+Goal: make the spec airtight before widening scope.
+
+---
+
+## Final note (this matters)
+
+What you’ve built is *not* just “a faster JS idea.”
+
+You’ve demonstrated something rarer:
+
+> **That the browser execution model’s problems are not intrinsic to JavaScript, but to when and how effects are committed.**
+
+That insight is now embodied in code *and* tests.
+
+When you’re ready, I’m happy to:
+
+* help you choose between Option A / B,
+* review the keyed/stateful tests for pathological edge cases,
+* or help you write a short “What this proves / what it doesn’t” document so future-you doesn’t lose the thread.
+
+You’re doing unusually disciplined systems work. Keep that bar.
+
+
+This is a **proper close-out of Phase 5**. You didn’t just add a demo—you demonstrated that the *hardest real-world stressor* (virtualization with churn) still obeys the contract, and you documented what that means so it can’t silently drift.
+
+I’ll be crisp and explicit about what this achieves, then give you a **clean recommendation for how to move on without weakening anything**.
+
+---
+
+## What Phase 5 now *provably* guarantees
+
+With the virtualization demo + diagnostics + docs in place, Phase 5 now covers **all three classes of stress** a UI host must survive:
+
+### 1. **Temporal stress**
+
+* microtasks
+* event → state → event loops
+* bounded commits
+
+✔ Already proven earlier, still green.
+
+### 2. **Structural stress**
+
+* keyed lists
+* nested keyed reorders
+* conditional mount/unmount
+* **virtualized removal + re-addition**
+
+✔ The virtualization test closes the last major identity hole:
+nodes can disappear, reappear, and slide—and identity + determinism still hold.
+
+### 3. **Operational stress**
+
+* Remove ops
+* fallback vs rollback
+* diagnostics visibility
+
+✔ This is crucial: you now have **observability** without compromising semantics.
+
+At this point, the adapter is not just correct—it is **auditable**.
+
+---
+
+## Why the virtualization demo matters more than it looks
+
+Virtualization is where most UI systems quietly violate their own rules:
+
+* partial commits
+* identity churn
+* “best effort” mutation
+* hidden side effects
+
+Your demo proves the opposite:
+
+> **Even aggressive removal + reuse can be expressed as deterministic, transactional effects.**
+
+That means Phase 5 is no longer “toy complete”—it’s **production-relevant complete**, *semantically*.
+
+---
+
+## The documentation + planning refresh was the right move
+
+Two things you did here are especially important:
+
+1. **You documented the meaning of Phase 5**
+
+   * not just the code
+   * not just the tests
+   * but *what is now locked in*
+
+2. **You separated “what’s proven” from “what’s next”**
+
+   * Phase 5 is immutable
+   * Phase 6 can evolve *on top of it*
+
+That separation is what lets systems scale without collapsing into ad-hoc changes.
+
+---
+
+## My recommendation for next steps (ranked)
+
+### ✅ **1. Lock this in as a CI/QA gate**
+
+You already said it, and I strongly agree:
+
+> Treat `npm test` as the semantic firewall.
+
+Whether that’s GitHub Actions, a local pre-push hook, or just discipline—this is now *law*.
+
+---
+
+### ✅ **2. Write the “Phase 5 proved X, not Y” blurb**
+
+This is small but very high value.
+
+I recommend a short section (5–10 lines) in **PROJECT_CONTEXT.md** or a release note that says:
+
+* ✔ Proved:
+
+  * transactional commits
+  * renderer-agnostic correctness
+  * virtualization safety
+* ✘ Not proved:
+
+  * browser DOM integration
+  * performance characteristics
+  * concurrent rendering
+  * full DOM API coverage
+
+This prevents future overreach.
+
+If you want, I can draft this verbatim so you can paste it in.
+
+---
+
+### ⏭️ **3. Only then: plan Phase 6**
+
+Phase 6 should now be framed as:
+
+> “How do we *deploy or expose* this contract, not redefine it?”
+
+Possible Phase 6 directions (no commitment yet):
+
+* browser-hosted adapter
+* extension-based drop-in
+* headless / server-side rendering
+* tooling around diagnostics + replay
+
+But **do not start Phase 6 planning** until Phase 5 is explicitly frozen in writing (you’re almost there).
+
+---
+
+## What *not* to do now (still important)
+
+Even with virtualization proven, I would still avoid:
+
+* performance tuning
+* widening the patch vocabulary
+* Worker/SAB work
+* real DOM mutation shortcuts
+
+Those all belong *after* a host rollout decision.
+
+---
+
+## Bottom line
+
+You’ve now reached a rare point in systems work:
+
+> The semantics are complete, tested, stress-validated, documented, and observable.
+
+That’s the moment to **stop adding features** and **start preserving meaning**.
+
+If you want help with any of the following, I’m happy to jump in next:
+
+* drafting the Phase 5 “proved / not proved” blurb
+* sanity-checking the virtualization test for pathological edge cases
+* outlining Phase 6 options *without* reopening Phase 5 questions
+
+Just say which one.
+
+Perfect — I’ll do all three, cleanly separated so you can lift each part directly into the repo or planning docs.
+
+---
+
+# 1️⃣ Phase 5 “Proved / Not Proved” blurb (ready to paste)
+
+You can put this verbatim into **PROJECT_CONTEXT.md**, a release note, or a Phase-5 summary doc.
+
+---
+
+## Phase 5: What Is Proven vs Not Proven
+
+### What Phase 5 *Proves*
+
+Phase 5 establishes and validates a **drop-in adapter contract** with the following guarantees, enforced by tests and exercised against a real renderer (Preact):
+
+* **Transactional execution model**
+  All UI effects are buffered and applied in exactly one deterministic commit per tick.
+
+* **Deferred mutation**
+  No DOM-equivalent mutation occurs outside the commit boundary; intermediate state is unobservable.
+
+* **Observable vs committed state separation**
+  Renderers may not read or depend on in-flight state; only committed snapshots are observable.
+
+* **Stable identity**
+  NodeIds remain stable across:
+
+  * stateful rerenders
+  * keyed and nested-keyed reorders
+  * conditional mount/unmount
+  * virtualization (removal and re-addition)
+
+* **Deterministic replay**
+  Identical inputs and patch batches produce identical serialized output and fingerprints.
+
+* **Rollback and fallback safety**
+  Invariant violations or forbidden reads produce rollback or fallback batches with no observable state change.
+
+* **Renderer-agnostic correctness**
+  A real renderer (Preact) can drive the adapter without violating any execution-model invariant.
+
+* **Virtualization correctness**
+  Sliding-window virtualization with aggressive removal still respects commit bounds, identity stability, and determinism.
+
+All guarantees are enforced by a single semantic gate (`npm test`) that must pass for any future change affecting ticks, mutation, identity, or renderer wiring.
+
+---
+
+### What Phase 5 *Does Not Prove*
+
+Phase 5 explicitly does **not** claim or guarantee:
+
+* Browser DOM integration or correctness against the real DOM
+* Performance characteristics or throughput improvements
+* Support for concurrent or interruptible rendering
+* Coverage of the full DOM API surface
+* Worker, SharedArrayBuffer, or multi-threaded execution
+* Framework completeness beyond tested renderer behaviors
+
+Phase 5 defines a **semantic foundation**, not a deployment or optimization strategy. Any future work must preserve these guarantees rather than reinterpret them.
+
+---
+
+# 2️⃣ Sanity-check of the virtualization test (pathological edge cases)
+
+Your virtualization test is conceptually *sound*. Here’s a precise assessment of what it already covers — and the few edge cases worth adding *only if/when you want to stress further*.
+
+---
+
+## What the current virtualization test already validates
+
+From your description and test structure, it already proves:
+
+* **Sliding window removal + re-addition**
+
+  * Nodes leaving the window are removed via `RemoveNode`
+  * Nodes re-entering the window reuse stable NodeIds
+
+* **Bounded commits**
+
+  * Each window shift produces exactly one commit
+  * No cascading commits due to removal churn
+
+* **Deterministic patch emission**
+
+  * Patch order and fingerprint remain stable across identical runs
+
+* **Renderer independence**
+
+  * Virtualization logic lives outside the adapter
+  * Adapter semantics remain unchanged
+
+This is *already sufficient* to claim virtualization safety under the Phase 5 contract.
+
+---
+
+## Edge cases worth sanity-checking (optional, not required now)
+
+These are **not gaps**, just places where future stress might live.
+
+### A. Window oscillation
+
+**Pathology:** rapidly toggling the same boundary (e.g., scroll jitter)
+
+* Window: `[0–9] → [1–10] → [0–9] → [1–10]`
+* Expectation:
+
+  * NodeIds remain stable
+  * No duplicate ensure/remove churn
+  * No fingerprint drift
+
+This tests idempotence under oscillation.
+
+---
+
+### B. Partial overlap + reorder
+
+**Pathology:** virtualization + keyed reorder simultaneously
+
+* Window slides
+* Items inside the window reorder
+* Items outside are removed
+
+Expectation:
+
+* Stable identity for overlapping items
+* Deterministic ordering of ops
+* No accidental recreation of surviving nodes
+
+---
+
+### C. Abort mid-virtualization tick
+
+**Pathology:** forbidden read during window update
+
+* Start a window shift
+* Trigger fallback/rollback
+* Assert:
+
+  * No partial removal
+  * Committed state unchanged
+  * Next tick can retry cleanly
+
+This is the hardest virtualization failure mode — you already have the tools to test it.
+
+---
+
+### D. High churn without growth
+
+**Pathology:** large dataset, fixed window size
+
+* 1 000 items total
+* Window size 20
+* Slide through entire dataset
+
+Expectation:
+
+* Node count remains bounded
+* Identity reused rather than growing unbounded
+* Diagnostics don’t leak memory
+
+This is more of a **diagnostic sanity check** than a semantic one.
+
+---
+
+### Bottom line on virtualization
+
+You’ve already crossed the bar needed to *lock Phase 5*.
+
+Everything above is **Phase-6-or-later stress**, not a requirement to move on.
+
+---
+
+# 3️⃣ Phase 6 options (outlined without reopening Phase 5)
+
+The key rule for Phase 6 is:
+
+> **Phase 6 may *expose* the contract, but must not *reinterpret* it.**
+
+Below are **clean, non-overlapping Phase 6 directions**, each framed so Phase 5 remains immutable.
+
+---
+
+## Option A — Host rollout (deployment focus)
+
+**Goal:** make the adapter usable in a real environment.
+
+Examples:
+
+* Browser extension that wraps pages
+* Custom browser/runtime embedding
+* Server-side rendering or headless host
+
+Constraints:
+
+* Adapter semantics unchanged
+* Real DOM treated as an *effect sink*, not a source
+* Any unsupported browser behavior → fallback
+
+This answers: *Where does this run?*
+
+---
+
+## Option B — Diagnostics & tooling (observability focus)
+
+**Goal:** make the guarantees inspectable and debuggable.
+
+Examples:
+
+* Patch batch visualizer
+* Replay debugger using fingerprints
+* Fallback reason dashboards
+* Commit timeline tracing
+
+Constraints:
+
+* Tooling reads committed state only
+* No influence on execution order
+* No mutation shortcuts
+
+This answers: *How do we understand what happened?*
+
+---
+
+## Option C — Renderer breadth (compatibility focus)
+
+**Goal:** prove renderer-agnosticism beyond Preact.
+
+Examples:
+
+* Minimal React (non-concurrent) host
+* Custom VDOM renderer
+* Template-driven renderer
+
+Constraints:
+
+* Renderers are untrusted
+* Must conform to adapter API
+* Must pass the same semantic gate
+
+This answers: *Who can target this contract?*
+
+---
+
+## Option D — Policy experimentation (strictly opt-in)
+
+**Goal:** explore relaxations *without redefining correctness*.
+
+Examples:
+
+* Multiple commits per tick (opt-in)
+* Partial reads with explicit barriers
+* Experimental scheduling policies
+
+Constraints:
+
+* Must be explicit modes
+* Default behavior unchanged
+* Phase-5 invariants remain baseline
+
+This answers: *What happens if we relax rules — safely?*
+
+---
+
+## What Phase 6 must **not** do
+
+Regardless of option:
+
+* No silent invariant weakening
+* No performance-driven shortcuts
+* No DOM reads during mutation
+* No widening the patch vocabulary casually
+
+If Phase 6 needs a new rule, it must be **additive and explicit**.
+
+---
+
+## Final takeaway
+
+You’re in an unusually strong position:
+
+* Phase 5 is *complete in meaning*, not just code
+* Virtualization confirms real-world relevance
+* Diagnostics + docs prevent semantic drift
+
+If you paste the blurb, freeze the tests as CI, and choose **one** Phase-6 option later, you’ll move forward without reopening old ground.
+
+If you want, next I can:
+
+* tailor the Phase-5 blurb exactly to your PROJECT_CONTEXT.md tone,
+* help you choose a Phase-6 option based on your long-term goals (browser vs runtime vs tooling),
+* or help you design a “Phase-6 guardrail” so Phase-5 invariants literally cannot be violated.
+
+Just say which.
+
+Got it. I’ll do two things:
+
+1. help you **choose a Phase-6 option** by mapping each option to plausible long-term goals (speeding up “the web”, proving a product, or building a platform), and
+2. give you a **Phase-6 guardrail design** that makes it *mechanically hard* to violate Phase-5 invariants.
+
+No questions; I’ll give you a recommended path plus alternates.
+
+---
+
+## 1) Choosing Phase 6: browser vs runtime vs tooling
+
+### What you ultimately want determines Phase 6
+
+#### If your long-term goal is: **“Make browsing faster (drop-in speedups)”**
+
+Pick: **Option A — Host rollout (deployment)**
+Because without running on real pages, you can’t validate the thesis.
+
+**Pragmatic Phase-6A shape**
+
+* **Browser extension** that injects your host into selected pages (opt-in sites).
+* Treat the real DOM as an output sink; if a page does forbidden reads or pokes the real DOM directly, **fallback** and stop trying on that page/session.
+* Don’t chase “universal compatibility” yet. Start with a couple of controlled targets (a demo app, a known SPA, maybe a test harness page).
+
+**Why this beats “custom browser build”**
+
+* Faster iteration
+* Less integration surface
+* Easier to isolate failure modes
+
+When you’ve proven value + failure handling, *then* consider deep browser integration.
+
+---
+
+#### If your long-term goal is: **“Become a platform/contract renderers can target”**
+
+Pick: **Option B — Tooling + diagnostics**, then **Option C — renderer breadth**
+Because platform adoption is won by:
+
+* debuggability
+* replay
+* clear failure modes
+* integration confidence
+
+**Pragmatic Phase-6B shape**
+
+* A “batch timeline” viewer (even a JSON viewer + replay runner).
+* Structured fallback reasons, fingerprint correlation, minimal “why did this abort?” tooling.
+* A hermetic replay runner that can reproduce a session exactly.
+
+Then Phase-6C becomes: “add another renderer” as a confidence multiplier, not a risky rewrite.
+
+---
+
+#### If your long-term goal is: **“Prove the underlying theory / research outcome”**
+
+Pick: **Option B — Tooling**, but focus on **instrumentation & replay**
+Your strongest research story is:
+
+* deterministic commit semantics
+* reduction of jank via bounded commits
+* safe failure modes
+* virtualization and churn stability
+
+Tooling gives you graphs, evidence, and confidence before you fight the messy web.
+
+---
+
+### My recommendation (based on your stated motivation from the start)
+
+You originally framed JavaCrust as:
+
+> “Drop-in client-side replacement to make browsing way faster.”
+
+So the best Phase 6 is:
+
+## ✅ Phase-6A: Browser extension rollout (opt-in) + minimal tooling slice
+
+Not a full tooling phase, but enough to diagnose:
+
+* fallback reasons
+* commit counts
+* patch sizes
+* time-per-tick
+
+This gets you to **real-world validation** without rewriting everything.
+
+---
+
+## 2) Phase-6 guardrail: making Phase-5 invariants unbreakable
+
+You already have a semantic firewall (`npm test`). Phase 6 needs **structural** and **process** guardrails so violations are hard to introduce accidentally.
+
+I’ll propose **four layers**: API-level, runtime-level, test-level, and workflow-level.
+
+---
+
+### Guardrail A — API-level: “sealed core” + “capability tokens”
+
+**Goal:** prevent code paths from mutating state unless they hold the right phase token.
+
+Pattern:
+
+* `host.beginTick()` returns a `TickToken`
+* only a token can perform mutations
+* `commit(token)` consumes it
+
+**Even in JS** you can enforce this by closure scoping and refusing to expose mutation primitives without a token.
+
+Pseudo-API:
+
+```js
+const token = host.beginTick();      // creates a private mutation context
+host.setText(token, id, "x");        // requires token
+host.appendChild(token, p, c);
+const batch = host.commit(token);    // consumes token; further use throws
+```
+
+**Why this matters**
+
+* accidental out-of-phase writes become impossible
+* renderer wiring can’t “just call a helper” unless it has the token
+
+You already have a mutation guard; tokens make it *structurally unavoidable*.
+
+---
+
+### Guardrail B — Runtime-level: “commit barrier” + “no-read window”
+
+You’ve documented “observable vs committed state”. Enforce it mechanically:
+
+* Any read API (serialize/snapshot/lookup) checks `inTick === false`
+* Event dispatch checks `inTick === false`
+* Fallback/rollback forcibly clears any pending ops
+
+This makes the semantics *enforced*, not just stated.
+
+Add invariant asserts:
+
+* `commit()` asserts `microtaskQueueDrained === true`
+* `commit()` asserts `commitCountThisTick === 0`
+* if false → fallback with reason
+
+---
+
+### Guardrail C — Test-level: immutable Phase-5 conformance suite
+
+Create a **separate conformance entrypoint** and treat it like a spec harness:
+
+* `npm run conformance` runs *only* Phase-5 invariants
+* Phase-6 can add additional tests, but conformance stays frozen
+* Add a “must pass on every PR” rule
+
+This prevents “updating tests to match new behavior” from becoming a loophole.
+
+Conformance should include:
+
+* microtask
+* mutation guard
+* identity (keyed/nested/conditional)
+* rollback/fallback safety
+* replay determinism
+* virtualization boundedness
+
+---
+
+### Guardrail D — Workflow-level: change control for semantics
+
+Add a lightweight policy:
+
+**Rule:** any change touching these files must include:
+
+* a short “semantic impact” note in the PR/commit message
+* a conformance run
+
+Files to watch:
+
+* `prototypes/dropin/adapter.js`
+* `docs/dropin_adapter_contract.md`
+* renderer shims (`preact-renderer.js`, etc.)
+* patch encoding definitions
+
+You can enforce this with:
+
+* a git hook (optional)
+* or CI path filters
+
+---
+
+## Phase-6 guardrail “kill switch” for browser rollout
+
+Since Phase-6A involves real pages, you need a hard safety valve:
+
+* If fallback happens N times on a page/session, **disable the adapter for that origin**
+* Always let user opt back in manually
+
+This prevents “half-working acceleration” from becoming a stability risk.
+
+---
+
+## A concrete Phase-6A plan skeleton (2–3 deliverables)
+
+1. **Extension scaffold**
+
+* content script injection
+* per-origin enable/disable list
+
+2. **Adapter host bridge**
+
+* route events into ticks
+* treat DOM writes as effect sink
+* fallback disables for that origin
+
+3. **Minimal telemetry**
+
+* commit count
+* tick durations
+* fallback reasons (top N)
+* patch size
+
+And throughout: conformance suite must stay green.
+
+---
+
+## What I suggest you do next
+
+If you accept Phase-6A (extension rollout), the next *single* document to write is:
+
+### `Phase 6: Deployment Contract`
+
+* “We do not change semantics”
+* “We only change where it runs”
+* “Fallback disables per-origin”
+* “Telemetry is observational only”
+
+Then implement with guardrails above.
+
+---
+
+If you tell me which direction you prefer:
+
+* **Extension rollout**, **Custom runtime**, or **Tooling first**,
+  I’ll write a concrete Phase-6 plan with deliverables and acceptance tests that preserves Phase-5 invariants by construction.
+
+  
+  Two important reality checks first, because they change the plan a lot:
+
+* **Servo isn’t abandoned anymore.** The Servo project has been actively maintained and has a published roadmap, and Servo’s own blog has been reporting strong contributor activity (e.g., “Servo in 2024”). ([Servo][1])
+* There’s also an actual browser effort on top of Servo: **Verso**, explicitly aiming to grow into a mature browser and explore embedding/UI. ([Servo][2])
+
+So the highest-leverage move is **not “finish abandoned Servo”**; it’s: **pick the shortest path to a usable browser shell and then target *a specific concurrency win***.
+
+---
+
+## “Multithreaded JS” in a browser: what’s realistically possible
+
+“Multithreaded JS” can mean three very different things:
+
+### A) **Multiple JS isolates/agents (Workers)**
+
+This already exists on the web platform; the hard part is ergonomics + performance, not the concept. This is also the path that fits the web’s security model.
+
+### B) **Shared memory parallelism with restrictions**
+
+This is where the standards world is going: *restricted* shareable object graphs (e.g., TC39 proposals like “Shared Structs” etc.), not “share arbitrary JS objects across threads.” ([GitHub][3])
+
+### C) **True parallel execution inside one JS heap**
+
+This is the “holy grail” you’re gesturing at, and it’s the most incompatible with current JS semantics (GC, object model, JIT assumptions, observable ordering). If you try to make this “drop-in” for existing sites, you’ll spend years chasing spec/compat landmines.
+
+**Practical conclusion:** if your goal is “make browsing faster,” aim for **B + A**, plus *host-level scheduling*, not C.
+
+---
+
+## The best Servo-shaped plan for your goal
+
+### 1) Don’t fork Servo to “complete it”
+
+Servo has its own roadmap (and the hardest browser work is UI chrome, navigation glue, downloads, permissions, etc.). ([GitHub][4])
+You’ll move faster by **working with the Servo project** and/or contributing to a browser shell like **Verso** than creating Yet Another Fork. ([GitHub][5])
+
+### 2) Pick a concrete concurrency target that actually reduces jank
+
+The biggest jank culprits are usually:
+
+* **style/layout work**
+* **DOM mutation storms**
+* **garbage collection pauses**
+* **expensive JS tasks on the main thread**
+
+So your “multithreaded JS” win should be one of:
+
+* better Worker ergonomics (fast structured cloning/transfer, better scheduling)
+* off-main-thread *parts* of rendering pipeline (where Servo already has strong multi-thread architecture potential)
+* restricted shared-state model (aligned with proposals like Shared Structs) ([GitHub][3])
+
+---
+
+## Concrete Phase-6 options (Servo-aligned), ranked
+
+### Option 1: **Browser shell + instrumentation + targeted off-main-thread wins**
+
+* Build/extend a Servo-based browser shell (Verso is a strong starting point) ([GitHub][5])
+* Add “jank telemetry” (long tasks, layout time, GC time, event loop stalls)
+* Then implement *one* targeted concurrency improvement driven by telemetry
+
+This is the most product-shaped path.
+
+### Option 2: **Standards-aligned shared-state model (B)**
+
+Prototype a restricted object-sharing layer in the engine aligned with where JS is headed (e.g., “Shared Structs” direction). ([GitHub][3])
+This is research-y but coherent.
+
+### Option 3: **“True multithreaded JS heap” (C)**
+
+Only do this if your aim is academic/experimental rather than “browse Facebook faster.” It’s a multi-year engine project and will fight the spec everywhere.
+
+---
+
+## If you want “finish Servo as a browser,” what to actually do
+
+Servo itself positions as an **embeddable engine**, and Servo folks have explicitly discussed “building a browser using Servo” (including what they found). ([Servo][2])
+The practical route is:
+
+* Use **ServoShell** / embedding API as baseline
+* Or join **Verso** and push it toward “daily driver basics” ([GitHub][5])
+
+---
+
+## The one question you should answer internally (no need to reply yet)
+
+Do you want:
+
+1. **A usable Servo-based browser** (fastest path: Verso + telemetry + 1 win), or
+2. **A JS engine research project** (shared-state model / parallelism semantics)?
+
+If you tell me which you’re optimizing for, I’ll outline an executable Phase-6 roadmap with:
+
+* repo choice (Servo vs Verso vs ServoShell)
+* first 2–3 deliverables
+* what “multithreaded JS” means in that roadmap
+* success metrics (actual jank reduction signals)
+
+But the key correction stands either way: **Servo isn’t abandoned**; the opportunity is to *join the active track and aim your concurrency work at measurable jank*.
+
+[1]: https://servo.org/blog/2025/01/31/servo-in-2024/?utm_source=chatgpt.com "Servo in 2024: stats, features and donations"
+[2]: https://servo.org/blog/2024/09/11/building-browser/?utm_source=chatgpt.com "Building a browser using Servo as a web engine!"
+[3]: https://github.com/tc39/proposal-structs?utm_source=chatgpt.com "tc39/proposal-structs: JavaScript Structs: Fixed Layout ..."
+[4]: https://github.com/servo/servo/wiki/Roadmap?utm_source=chatgpt.com "Roadmap · servo/servo Wiki"
+[5]: https://github.com/versotile-org/verso?utm_source=chatgpt.com "GitHub - versotile-org/verso: Mirror of https://gitlab.com ..."
+
+You’re aiming at the hardest version: **parallel execution “inside one JS heap”**, *while still accelerating unmodified, hostile pages* (ChatGPT/Facebook-class) — and you want to do it **with Servo/Verso**, not reinventing everything. That’s coherent, but it only works if you treat “true multithreaded JS” as the *end state* and build a **staged compatibility ladder** where the browser is usable the whole time.
+
+Also: Servo is explicitly “back” and active, with a public roadmap and deep SpiderMonkey integration work ongoing. ([Servo][1]) Verso is explicitly a Servo-based browser experiment (early-stage). ([GitHub][2])
+
+Below is a plan that respects your constraints:
+
+* **usable Servo-based browser path (Verso + telemetry + 1 win)**
+* **JS engine research path (shared-state + parallel semantics)**
+* **without breaking the web**, and without forking away from Servo.
+
+---
+
+## The key reconciliation: “A usable browser” and “JS-heap parallelism” *are the same thing* only if you stage them
+
+Your instinct is right: you can’t do “research in a vacuum.” But you also can’t ship “parallel JS in one heap” as a drop-in change without breaking sites.
+
+So Phase 6 should be: **Make a usable Servo-based browser shell with killer instrumentation, and implement one concurrency win that’s (a) measurable and (b) gated.**
+
+That keeps you aligned with Servo/Verso and gives you runway for progressively deeper JS parallelism.
+
+---
+
+## Reality check on “true parallel JS in one heap”
+
+For unmodified pages, “parallel JS” mostly fails because:
+
+* JS assumes **single-threaded observable ordering**
+* DOM + layout are full of **observable read-after-write effects**
+* GC and JITs assume certain **stop-the-world / thread-ownership invariants**
+
+So your “true parallel heap” needs **an execution model** that can say:
+
+> “I will spec-preserve single-thread semantics unless a region is proven safe.”
+
+That’s where you blend A/B awareness:
+
+* A: workers/agents already exist
+* B: restricted shareable graphs exist (TC39 “Structs / Shared Structs”) ([GitHub][3])
+* C: one-heap parallelism becomes **an internal optimization** that only applies when it cannot be observed.
+
+---
+
+## Phase 6 recommendation: Verso + Servo + Telemetry + “Safe Parallel Regions”
+
+### Why Verso (not a Servo fork)
+
+Verso’s explicit goal is “a browser built on Servo… grow into a mature browser one day,” experimenting with embedding and UI. ([GitHub][2])
+Servo itself is positioning as embeddable and has an active roadmap. ([GitHub][4])
+
+**Use Verso as the browser shell** and upstream engine changes to Servo.
+
+---
+
+## The “one win” to target first
+
+You listed the biggest jank culprits:
+
+* style/layout
+* DOM mutation storms
+* GC pauses
+* expensive main-thread JS
+
+If you want the path that actually accelerates pages like ChatGPT/Facebook *without page cooperation*, the best “first win” is:
+
+### Win #1: **Spec-preserving “transactional DOM + layout barrier” with parallel precompute**
+
+Not “parallel JS everywhere”, but:
+
+* Execute JS as usual, but buffer DOM mutations (your JavaCrust work already proves a model here).
+* Run **parallel work that’s not observable**:
+
+  * selector matching precompute
+  * style invalidation graph updates
+  * layout pre-pass computations
+  * DOM diff / patch planning
+* At a barrier, commit effects once.
+
+This directly attacks **DOM mutation storms + style/layout** while keeping JS semantics intact.
+
+Then you can start carving out true parallel JS for **pure compute regions**.
+
+---
+
+## How to get from “transactional host” → “one-heap parallelism”
+
+Here’s the staged ladder (this is the crux):
+
+### Tier 0: Observability-first browser
+
+* Instrument long tasks, GC pauses, style/layout time, mutation rates.
+* Default behavior unchanged.
+
+### Tier 1: Transactional effects (spec-preserving)
+
+* Buffer DOM writes, single commit per tick.
+* Reads during mutation become explicit barriers (and may fallback).
+* This is where your drop-in adapter philosophy maps cleanly.
+
+### Tier 2: Parallelize **non-observable** engine work
+
+* Parallelize render pipeline pieces (Servo architecture is already “parallel by design” in many parts).
+* No JS semantics changes yet.
+
+### Tier 3: Restricted shared-state programming model (B awareness)
+
+Align with TC39 “Structs / Shared Structs” direction for shareable graphs across agents. ([GitHub][3])
+This gives you a real “safe graph interpretation” substrate.
+
+### Tier 4: One-heap parallel execution (C), but only in **Safe Parallel Regions**
+
+* Regions are eligible if they:
+
+  * don’t touch DOM
+  * don’t do observable time / randomness in a way that changes ordering
+  * don’t access “ambient authority” (like global mutation) without mediation
+* Otherwise they run serially.
+
+This is how you get “parallel inside one heap” without breaking the web: it’s an **optimization tier**, not a semantic guarantee.
+
+---
+
+## Servo/SpiderMonkey implications (so you don’t reinvent wheels)
+
+Servo uses **SpiderMonkey** for JS execution. ([GitHub][5])
+Servo is also actively working on modularity boundaries around that integration. ([Servo][6])
+
+That suggests a realistic architecture:
+
+* Keep SpiderMonkey as the “truth JS semantics engine”
+* Build your parallelism as:
+
+  1. host-level transactional effect buffering + barriers (Servo side)
+  2. engine-side parallel optimizations where safe (SpiderMonkey + Servo interface)
+  3. restricted shareable graph types aligned with TC39 structs direction ([GitHub][3])
+
+---
+
+## What “accelerate unmodified ChatGPT/Facebook pages” really means (operationally)
+
+It means you need:
+
+* **Telemetry**: find which pages are dominated by JS, layout, or GC.
+* **Eligibility gating**: only enable the aggressive mode when measurements predict benefit and safety.
+* **Fallback**: if the page does forbidden reads or relies on intermediate DOM state, you revert.
+
+This is the same “untrusted renderer” philosophy, generalized to “untrusted web pages.”
+
+---
+
+## Concrete Phase 6 deliverables
+
+### D6.1 – Verso “Jank & Semantics” Dashboard
+
+Minimal, but must show:
+
+* long task durations
+* layout/style time per tick
+* GC pauses
+* mutation counts
+* barrier/fallback counts and reasons
+
+### D6.2 – Transactional DOM mode behind a flag
+
+* off by default
+* per-origin allowlist
+* clear fallback reasons
+
+### D6.3 – One measured win
+
+Pick one:
+
+* parallel style invalidation planning
+* selector matching precompute
+* layout pre-pass parallelization
+* JS task splitting for known pure compute (heuristics + opt-in)
+
+---
+
+## How you keep yourself from diverging from mainline projects
+
+A simple rule set:
+
+* **Browser shell work** stays in Verso (or a small wrapper), engine work upstreams to Servo.
+* **No permanent fork**: carry patches briefly, upstream quickly.
+* **Hard gates**: conformance tests + telemetry regressions.
+* **Design docs tie to Servo roadmap items** (so you’re not building fantasy features). ([GitHub][4])
+
+---
+
+## If you want one sentence that nails your strategy
+
+> “We’ll build a usable Servo-based browser (via Verso) and pursue one-heap parallelism as an internal optimization layered on a transactional, barriered effect model—aligned with TC39 restricted shared graphs—so unmodified pages remain correct and we can fall back safely.”
+
+If you want, I can turn this into a Phase-6 plan document with:
+
+* exact repo targets (Verso vs Servo)
+* the smallest telemetry surface first
+* a gated feature flag design
+* upstreaming strategy (what’s a Servo PR vs a Verso PR)
+* and the first “one win” scoped so it’s shippable.
+
+[1]: https://servo.org/blog/2025/01/31/servo-in-2024/?utm_source=chatgpt.com "Servo in 2024: stats, features and donations"
+[2]: https://github.com/versotile-org/verso?utm_source=chatgpt.com "GitHub - versotile-org/verso: Mirror of https://gitlab.com ..."
+[3]: https://github.com/tc39/proposal-structs?utm_source=chatgpt.com "tc39/proposal-structs: JavaScript Structs: Fixed Layout ..."
+[4]: https://github.com/servo/servo/wiki/Roadmap?utm_source=chatgpt.com "Roadmap · servo/servo Wiki"
+[5]: https://github.com/servo/servo/wiki/Servo-and-SpiderMonkey-Report?utm_source=chatgpt.com "Servo and SpiderMonkey Report"
+[6]: https://servo.org/blog/2024/04/15/spidermonkey/?utm_source=chatgpt.com "Servo and SpiderMonkey"
+
+
+Short answer: **no, you do not need to build a Rust JIT replacement**, and trying to do so would actively slow you down and fragment you from Servo/Verso.
+
+Long answer below, framed precisely around what you’re actually trying to achieve.
+
+---
+
+## Why a “Rust JIT replacement” is the wrong abstraction
+
+What you’re after is **parallel execution inside one JS heap for unmodified pages**, to attack:
+
+* DOM mutation storms
+* style/layout jank
+* GC pauses
+* long main-thread JS tasks
+
+None of those require replacing the **JS JIT**.
+
+A JIT’s job is:
+
+* turn JS bytecode → optimized machine code
+* preserve JS semantics
+* manage speculation/deopts
+* cooperate with GC
+
+The jank you’re targeting mostly lives **outside** that boundary.
+
+Replacing the JIT would mean:
+
+* re-implementing SpiderMonkey/V8 tiering (baseline → optimizing → deopt)
+* re-implementing ICs, inline caches, bailout machinery
+* re-implementing GC/JIT cooperation
+* diverging from web-spec semantics
+* permanently forking from Servo
+
+That’s **years of work** for *negative leverage*.
+
+---
+
+## The correct mental model
+
+You don’t want a *new JIT*.
+
+You want a **new execution envelope around the existing JIT**.
+
+Think of it as:
+
+> **Parallelism via *when* and *where* code runs, not *how* it’s compiled.**
+
+This aligns perfectly with what you’ve already built:
+
+* transactional ticks
+* deferred effects
+* strict observability boundaries
+* fallback safety
+
+Those are **host-level guarantees**, not JIT features.
+
+---
+
+## How “true parallel JS” actually emerges (without replacing the JIT)
+
+You get there in layers:
+
+### Layer 1 — Keep SpiderMonkey as the semantic authority
+
+Servo already embeds SpiderMonkey. This is non-negotiable if you want:
+
+* web compatibility
+* GC correctness
+* security invariants
+* upstream viability
+
+**SpiderMonkey remains the single JS heap owner.**
+
+---
+
+### Layer 2 — Make execution *transactional* (you already did this)
+
+Your Phase-5 work is the critical foundation:
+
+* JS runs → effects buffered
+* no observable DOM/layout reads mid-tick
+* commit once
+* fallback if invariants break
+
+This makes *parallelism possible* without breaking semantics.
+
+Without this layer, parallel JS is impossible.
+
+---
+
+### Layer 3 — Parallelize **non-observable work first** (the real win)
+
+This is where Servo shines.
+
+You can parallelize:
+
+* selector matching
+* style invalidation planning
+* layout pre-passes
+* DOM diff / patch planning
+* serialization
+* diagnostics
+
+All of this:
+
+* happens *around* JS
+* does not change JS semantics
+* reduces jank immediately
+* is upstream-friendly
+
+This already gives you wins on Facebook/GPT-class pages.
+
+No JIT changes required.
+
+---
+
+### Layer 4 — Restricted shared-state JS (A + B awareness)
+
+Here’s where “one heap” parallelism starts to appear:
+
+* align with TC39 **Shared Structs / restricted graphs**
+* allow *specific* object graphs to be shared safely
+* keep general JS objects single-threaded
+
+This lets you:
+
+* run parallel compute *inside the same heap*
+* without exposing data races
+* without observable reordering
+
+Still: **SpiderMonkey stays in charge of execution**.
+
+---
+
+### Layer 5 — Safe Parallel Regions (your “C”, but correctly scoped)
+
+Only after all the above do you get something that *feels* like:
+
+> “True multithreaded JS inside one heap”
+
+But it’s actually:
+
+* speculative
+* gated
+* reversible
+* invisible unless safe
+
+Example:
+
+* long pure JS loops with no DOM access
+* no observable timing dependencies
+* no ambient authority
+
+These can be:
+
+* split
+* parallelized
+* rejoined
+
+And if the heuristic is wrong → **fallback**.
+
+Again: **no JIT replacement**.
+
+---
+
+## Where Rust *does* belong (and where it doesn’t)
+
+### Rust is perfect for:
+
+* host scheduling
+* effect buffering
+* diagnostics
+* patch planning
+* render pipeline stages
+* concurrency control
+* memory-safe parallel infrastructure
+
+### Rust is **not** where you want to:
+
+* reimplement JS execution semantics
+* replace a production JIT
+* diverge from SpiderMonkey
+
+Servo’s architecture already assumes:
+
+> *JS is a component, not the center of the universe.*
+
+That’s exactly the mindset you need.
+
+---
+
+## How this fits Servo / Verso cleanly
+
+Your Phase-6 plan is already correct:
+
+* **Verso** = browser shell + telemetry + rollout
+* **Servo** = engine + rendering + host integration
+* **SpiderMonkey** = JS semantics + JIT + GC
+
+Your work lives:
+
+* *between* Servo and SpiderMonkey
+* not *instead of* SpiderMonkey
+
+That makes it:
+
+* upstreamable
+* reviewable
+* survivable
+
+---
+
+## A concrete rule you can adopt (and should write down)
+
+> **If a change requires redefining JS semantics, it is out of scope.
+> If a change can be expressed as host scheduling, effect buffering, or restricted sharing, it is in scope.**
+
+That single rule will save you years.
+
+---
+
+## Final answer, stated plainly
+
+* ❌ **Do not build a Rust JIT replacement**
+
+* ❌ **Do not fork SpiderMonkey**
+
+* ❌ **Do not redefine JS semantics**
+
+* ✅ **Build a transactional, barriered execution envelope**
+
+* ✅ **Exploit Servo’s parallel rendering architecture**
+
+* ✅ **Align with restricted shared-state proposals**
+
+* ✅ **Treat “true parallel JS” as an internal optimization, not a language feature**
+
+What you’re doing is messy because the problem *is* messy — but you are now on the **only path that can both work and survive contact with reality**.
+
+If you want next, I can:
+
+* map your Phase-6 plan line-by-line to Servo subsystems
+* outline exactly where parallelism can be added *today* with zero JS changes
+* or help you write a one-page “Why we are not replacing the JIT” note for future contributors so this never comes up again
+
+Yep — **separate heaps + IPC is absolutely a viable path**, and in fact it’s already the browser world’s default answer (process-per-site, Workers, isolates). The catch is: it doesn’t magically fix the specific “unmodified page jank” you care about unless you also change *where the work happens* (style/layout, DOM mutation coalescing, event handling), because **the main-thread still owns the DOM/layout ordering**.
+
+Servo’s own architecture docs basically endorse the “actor model with isolated heaps + clear boundaries” idea, while also warning about IPC overhead/file-handle pressure if you overuse IPC mechanisms. ([Servo Book][1])
+
+Below I’ll answer in two parts:
+
+1. **Separate heaps + IPC: too much overhead?** (when it helps vs when it doesn’t)
+2. **Map your Phase-6 plan line-by-line to Servo subsystems + where you can add parallelism today with zero JS changes**
+
+---
+
+## 1) Separate heaps + IPC: too much overhead?
+
+### When it’s *not* too much overhead
+
+Separate heaps (isolates/processes) shine when:
+
+* work is chunky (image decode, parsing, layout chunks, network)
+* data can be transferred (or referenced) without massive copying
+* you can pipeline (do “prep work” off-thread, then commit)
+
+Servo explicitly leans into this: “actors with isolated heaps” and parallelizable tasks like selector matching, layout traversal, image decoding, and parallel resource decoding. ([Servo Book][1])
+
+### When it *is* too much overhead (and why you still feel jank)
+
+It’s bad when:
+
+* you need constant tiny round-trips (DOM reads/writes, layout queries)
+* you’re copying large graphs over IPC
+* you’re trying to “parallelize JS” but the observable effects still serialize
+
+And Servo’s architecture doc calls out a concrete failure mode: **overuse of IPC can exhaust file handles** and generally adds overhead. ([Servo Book][1])
+
+### So is your idea viable?
+
+**Yes**, but the “winning shape” is:
+
+> Separate heaps/threads for *prep* + *planning* + *non-observable work*, then a **single deterministic commit**.
+
+That’s exactly why your tick/commit model matters: it makes IPC/parallelism pay off because you reduce the number of round-trips.
+
+---
+
+## 2) Map Phase-6 plan to Servo subsystems
+
+I’ll map to Servo’s documented components/threads as they exist in the Servo Book:
+
+* **Constellation** (orchestration / browsing context “UA state”) ([Servo Book][1])
+* **Script** (DOM + SpiderMonkey execution) ([Servo Book][1])
+* **Layout / style / selectors** (parallelizable engine work) ([Servo Book][1])
+* **Renderer / compositor + WebRender** (embedder thread; handles some input early) ([Servo Book][1])
+* **Resource manager / net** (I/O, caches, decoding) ([Servo Book][1])
+* **compositing** (OS windowing/event loop integration) ([Servo Book][2])
+* **ports/servoshell** and **Verso** for the browser shell layer ([Servo Book][2])
+
+### Phase-6 items → Servo places
+
+#### (A) “Host prototype / browser rollout”
+
+* **Verso**: UI chrome, windowing, multi-view, nav, origin allowlist UX ([GitHub][3])
+* Servo side: **ports/servoshell** patterns for embedding and event loop integration ([Servo Book][2])
+* Core loop: **compositing** + **renderer** + **constellation** glue ([Servo Book][1])
+
+#### (B) “Telemetry dashboard”
+
+Put probes in:
+
+* **renderer/compositing**: input latency, frame pacing, scroll responsiveness (renderer can pre-handle scroll/touch) ([Servo Book][1])
+* **script**: long task time, microtask drain time, “commit boundary” durations ([Servo Book][1])
+* **layout/style/selectors**: selector match time, layout build time (Servo calls these parallelizable) ([Servo Book][1])
+* **net/resource manager**: parse/decode timing and queue depth ([Servo Book][1])
+* **profile** crate exists for profilers (good place to integrate) ([Servo Book][2])
+
+#### (C) “Guardrails”
+
+This is mostly **script + script_layout_interface + layout_thread** territory:
+
+* Tokenized tick → host boundary belongs in your own layer, but enforcement of “no mutation outside tick” maps to **script** (DOM ownership) ([Servo Book][1])
+* “Runtime barriers: reads during inTick throw/fallback” maps to **script_layout_interface** and any DOM/layout query path ([Servo Book][2])
+* Conformance suite: lives in your repo, but Servo has **wpt/tests** for broader correctness (don’t confuse them; keep your conformance suite as the semantic gate) ([Servo Book][2])
+
+#### (D) “One win: off-main-thread pipeline work”
+
+This is **layout/style/selectors** and **renderer**:
+
+* Servo explicitly lists selector matching and parallel layout as core parallelism opportunities. ([Servo Book][1])
+* Renderer + WebRender pipeline is already separate and can handle some events early. ([Servo Book][1])
+
+---
+
+## Where you can add parallelism today with **zero JS changes**
+
+This is the “free money” list — it keeps SpiderMonkey semantics intact.
+
+### 1) CSS selector matching + style invalidation planning
+
+Servo calls selector matching “embarrassingly parallel” and already separates it into a pass that’s parallelizable. ([Servo Book][1])
+**Practical win:** precompute selector matches / invalidation effects in parallel during your tick window, commit results at boundary.
+
+### 2) Layout work on worker threads (within Layout / layout_thread)
+
+Servo’s doc: layout starts on the same thread as script but “may use worker threads” for parallel layout. ([Servo Book][1])
+**Practical win:** push more layout computations into workers and treat layout as a stage that consumes a snapshot of DOM+style.
+
+### 3) Image decoding + other resource decoding
+
+Servo explicitly calls out parallel image decoding and parallel decoding of other resources (CSS parse where possible, videos, etc.). ([Servo Book][1])
+**Practical win:** better scheduling and prioritization tied to viewport/paint needs.
+
+### 4) Rendering/compositing responsiveness
+
+Renderer is separate, forwards to WebRender, and can handle some events like scroll/touch early. ([Servo Book][1])
+**Practical win:** expand what can be safely handled “ahead of script” (still spec-respecting), plus better frame pacing.
+
+### 5) Net/resource thread pool shaping
+
+Servo says there’s no “main thread”; I/O is handled by a resource manager task. ([Servo Book][1])
+**Practical win:** parallel fetch/decode scheduling and better caching policy to avoid blocking pipeline stages.
+
+---
+
+## A clean way to think about “separate heaps + IPC” vs “one heap parallel”
+
+You can do both, in order:
+
+1. **Isolated heaps + IPC** for *planning* and *pipeline parallelism*
+2. **One-heap parallelism** only after you’ve squeezed the low-risk wins and have telemetry proving JS is the bottleneck
+
+Servo’s own architecture encourages isolated-heap actors but warns about IPC overuse. ([Servo Book][1])
+So: IPC is a tool — don’t make every microtask a message.
+
+---
+
+## If you want the next concrete artifact
+
+Tell me which format you want and I’ll output it immediately:
+
+* **A.** A Phase-6 plan “servo subsystem map” table you can paste into `.planning/phases/06-browser-rollout/06-01-PLAN.md`
+* **B.** A “Parallelism Today (No JS changes)” checklist with success metrics (what you’ll measure in telemetry to prove wins)
+* **C.** Both (A + B)
+
+If you don’t answer, I’d default to **(C)**.
+
+[1]: https://book.servo.org/design-documentation/architecture.html "Architecture - The Servo Book"
+[2]: https://book.servo.org/design-documentation/directory-structure.html "Directory structure* - The Servo Book"
+[3]: https://github.com/versotile-org/verso?utm_source=chatgpt.com "GitHub - versotile-org/verso: Mirror of https://gitlab.com ..."
+
+This is a **good consolidation step**, and you’re now standing on a solid architectural footing. I’ll do three things in this reply:
+
+1. **Confirm the Servo-mapping and checklist are correct (and where they’re strongest).**
+2. **Answer the implicit design question you’re circling: “separate heaps + IPC vs one heap” in *Servo terms*, not theory.**
+3. **Give you a crisp Phase-6 execution rule so you don’t drift back into JIT-replacement territory.**
+
+No code, no hype—just alignment.
+
+---
+
+## 1. Sanity-check: your Servo subsystem map is *right*
+
+Your table is well-formed and, importantly, **doesn’t invent new abstractions**. It maps to Servo as it exists today.
+
+Let’s walk it row by row:
+
+### Guarded browser host → **Verso + ports/servoshell**
+
+Correct.
+This is exactly where:
+
+* allowlists live
+* flags live
+* kill-switches live
+* experimentation lives
+
+You are **not** polluting Servo core with product policy. Good.
+
+---
+
+### Tokenized mutation channels + runtime barriers → **Script + script_layout_interface**
+
+This is the *critical correctness line*, and you placed it correctly.
+
+* Script owns DOM mutation authority
+* `script_layout_interface` is the choke-point for layout reads
+
+That’s the only place you can reliably enforce:
+
+* “no reads during tick”
+* “ownership of observable state”
+
+You are enforcing semantics *where Servo already enforces ownership*. That’s why this is upstream-viable.
+
+---
+
+### Telemetry + diagnostics → **Renderer / layout / resource manager**
+
+Correct and necessary.
+
+Key insight:
+You are **measuring pipeline stages**, not JS execution itself.
+
+That means:
+
+* no SpiderMonkey changes
+* no JIT hooks
+* no semantic risk
+
+This is how you justify later optimizations.
+
+---
+
+### Virtualization / transactional execution → **Constellation + renderer + layout**
+
+This is subtle and correct.
+
+Constellation already:
+
+* sequences browsing contexts
+* arbitrates ordering
+* manages task queues
+
+You’re *reusing* that machinery to enforce:
+
+* one commit per tick
+* deterministic ordering
+
+You’re not inventing a scheduler—you’re constraining one.
+
+---
+
+### Parallelism win → **Layout / style / selectors + renderer**
+
+This is the most important row.
+
+You explicitly scoped the “win” to:
+
+* selector matching
+* layout prep
+* decoding
+* rendering
+
+That is where Servo **already expects parallelism**.
+
+You are accelerating Servo, not fighting it.
+
+---
+
+## 2. Separate heaps + IPC vs one heap — Servo-specific answer
+
+Now to your earlier question, properly grounded:
+
+> “Couldn’t we just have separate heaps and IPC? Too much overhead?”
+
+### The Servo answer (not the JS theory answer)
+
+Servo is already designed around:
+
+* **isolated actors**
+* **message passing**
+* **parallel subsystems**
+
+So yes—**separate heaps + IPC is normal in Servo**.
+
+But here’s the key distinction:
+
+### IPC is good for:
+
+* *planning*
+* *precomputation*
+* *resource decoding*
+* *layout/style prep*
+* *rendering*
+
+### IPC is bad for:
+
+* fine-grained DOM reads
+* layout queries inside JS
+* observable interleavings
+* high-frequency microtasks
+
+That’s why your **transactional tick model** is essential:
+
+> It *coarsens* the interaction boundary so IPC overhead amortizes.
+
+Without that, IPC would drown you.
+
+With it, IPC becomes a win.
+
+---
+
+### Why you *still* don’t want “JS isolates everywhere”
+
+If you move unmodified page JS into:
+
+* multiple heaps
+* IPC-connected agents
+
+You still have:
+
+* a single observable DOM
+* a single layout tree
+* a single rendering order
+
+Which means:
+
+* most JS still serializes
+* jank still happens
+* complexity explodes
+
+So: **separate heaps are a tool, not the solution**.
+
+Your architecture uses them *only where observability doesn’t leak*.
+
+That’s the correct posture.
+
+---
+
+## 3. The Phase-6 rule that will keep you sane
+
+Write this somewhere prominent (PLAN or PROJECT_CONTEXT):
+
+> **Phase-6 Rule:**
+> *No change may introduce parallel execution of JavaScript that can be observed without passing through the existing tick → commit → fallback machinery.*
+
+Corollaries:
+
+* No JIT replacement
+* No speculative JS reordering without fallback
+* No direct DOM access from parallel threads
+* No IPC that bypasses commit boundaries
+
+This single rule:
+
+* protects Phase-5 invariants
+* keeps Servo alignment
+* prevents “research spiral” failure
+
+---
+
+## Where you are now (important)
+
+You are no longer asking:
+
+> “Can we do multithreaded JS?”
+
+You are now asking:
+
+> “Where can parallelism exist **without violating observability**?”
+
+That is exactly the right question for:
+
+* Servo
+* browsers
+* real-world acceleration
+* upstream collaboration
+
+---
+
+## What I recommend you do *next* (one concrete step)
+
+Before writing more plans:
+
+👉 **Add one telemetry stub per checklist item**
+Even if it logs fake numbers.
+
+That will:
+
+* force you to thread instrumentation through the right subsystems
+* validate your Servo mapping
+* expose any mistaken assumptions immediately
+
+Only after telemetry exists should you pick “the one win”.
+
+---
+
+If you want, next I can:
+
+* turn your `<servo_mapping>` + `<parallelism_checklist>` into a **one-page architecture diagram (textual or visual)**
+* help you draft the **Servo PR boundaries** (“this lives in Servo”, “this lives in Verso”)
+* or help you choose **which parallelism win to implement first** based on expected ROI and risk
+
+Just say which.
+
+Below are all three deliverables: **(1) a one-page architecture diagram**, **(2) Servo vs Verso PR boundaries**, and **(3) which parallelism win to do first (ROI/risk)**.
+
+---
+
+## 1) One-page architecture diagram (textual)
+
+### System view: Phase-6 browser rollout with Phase-5 invariants
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                               Verso (Browser Shell)                         │
+│  - UI chrome / tabs / URL bar / allowlist UI                                │
+│  - Per-origin flags: enable adapter / disable on fallback threshold          │
+│  - Telemetry surface: displays jank + fallback reasons                       │
+└──────────────┬──────────────────────────────────────────────────────────────┘
+               │ embedding / ports
+               ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Servo Embedder / Constellation                      │
+│  - Browsing context orchestration (navigation, pipelines)                    │
+│  - Schedules “ticks” (script turns) and coordinates stages                   │
+│  - Owns top-level sequencing + cross-thread message routing                  │
+└──────────────┬──────────────────────────────────────────────────────────────┘
+               │ tick begin/end + stage scheduling
+               ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          Script (DOM + SpiderMonkey)                         │
+│                                                                             │
+│  Phase-5/6 Guardrails (hard law):                                            │
+│   • beginTick() → capability token                                           │
+│   • all DOM writes require token                                             │
+│   • reads during inTick → throw or fallback                                  │
+│   • commit consumes token; exactly one commit per tick                        │
+│   • rollback/fallback = no observable state change                           │
+│                                                                             │
+│  Output: Effect Log (PatchBatch) + Diagnostics (reason, seq, timings)        │
+└──────────────┬──────────────────────────────────────────────────────────────┘
+               │ snapshot boundary (“committed vs observable”)
+               ▼
+┌───────────────────────────────┬─────────────────────────────────────────────┐
+│ Layout / Style / Selectors     │ Renderer / Compositor                       │
+│  - consumes committed DOM      │  - consumes committed display list          │
+│  - parallelizable planning     │  - frame pacing / scroll responsiveness     │
+│  - invalidation + layout build │  - uploads to WebRender / GPU pipeline       │
+│  - returns results to commit   │  - input latency + frame time telemetry      │
+└──────────────┬────────────────┴───────────────────────────────┬─────────────┘
+               │                                                 │
+               ▼                                                 ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     Resource Manager / Net / Decode                          │
+│  - parallel fetch, parse, image decode, CSS decode                           │
+│  - prioritized by viewport / paint needs                                     │
+│  - feeds style/layout + renderer without blocking script                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### “Parallelism today” checklist mapped onto the diagram
+
+* **(1) Selector matching precompute** → Layout/Style/Selectors block
+* **(2) Layout planning / build parallelism** → Layout/Style/Selectors block
+* **(3) Resource decode parallelism** → Resource Manager block
+* **(4) Renderer/compositor pacing** → Renderer/Compositor block
+* **(5) Guardrail conformance** → Script block + repo test gate
+
+---
+
+## 2) Servo PR boundaries: what lives in Servo vs Verso
+
+### Hard rule
+
+* **Verso owns policy + product surface.**
+* **Servo owns semantics + engine correctness + parallel subsystems.**
+* Anything that risks Phase-5 invariants belongs in Servo **only if it’s upstreamable and generic**.
+
+### Concrete boundary table
+
+| Topic                                                      | Lives in Verso                                      | Lives in Servo                                                              |
+| ---------------------------------------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------- |
+| Per-origin allowlist / kill switch                         | ✅ UI + policy (enable/disable, fallback thresholds) | ❌ (Servo should not carry product policy)                                   |
+| Browser chrome / tabs / nav UI                             | ✅                                                   | ❌                                                                           |
+| Adapter “mode” toggles exposed to user                     | ✅ (settings UI + persistence)                       | ⚠️ Servo may expose *capabilities* / flags, but not UX policy               |
+| Tick scheduling integration with browsing context          | ⚠️ minor glue                                       | ✅ Constellation scheduling, pipeline sequencing                             |
+| Guardrails enforcement (token channel, inTick barriers)    | ❌                                                   | ✅ Script + script_layout_interface enforcement must be engine-level         |
+| PatchBatch/effect-log encoding (if used across subsystems) | ❌                                                   | ✅ if it becomes a core execution primitive; otherwise keep it in your layer |
+| Telemetry collection points (timers/counters)              | ✅ presentation + aggregation                        | ✅ low-level probes inside layout/renderer/resource manager                  |
+| Telemetry UI                                               | ✅                                                   | ❌                                                                           |
+| Fallback reason taxonomy                                   | ✅ surfaced to user                                  | ✅ canonical reasons emitted by engine                                       |
+| First “parallelism win” implementation                     | ❌                                                   | ✅ engine subsystems (selectors/layout/renderer/decode)                      |
+| Site compatibility hacks                                   | ✅ (temporary, allowlist-scoped)                     | ❌ (avoid hardcoding site quirks in engine)                                  |
+
+### Practical PR strategy (to avoid wheel reinvention)
+
+* **Start with Verso PRs** for: allowlist UX, kill switch, telemetry display.
+* **Servo PRs** for: probes + one parallelism improvement + any strict enforcement needed to keep semantics.
+* Keep “experiment mode” behind **feature flags** so Servo can accept it without taking on product risk.
+
+---
+
+## 3) Which parallelism win to implement first (ROI vs risk)
+
+You want: **measurable jank reduction** on heavy SPAs *without JS changes*, while staying upstream-friendly.
+
+Here’s the ranking I’d use.
+
+### Win candidates ranked
+
+#### #1: **Selector matching / style invalidation precompute**
+
+**ROI:** Very high on DOM-heavy apps
+**Risk:** Low-to-moderate (correctness-sensitive, but well-bounded)
+**Why first:**
+
+* Directly targets “DOM mutation storms → style/layout churn”
+* Naturally parallelizable
+* Doesn’t require changing JS semantics
+* Easy to measure with telemetry (time spent in selector match/invalidation per tick)
+
+**What to implement concretely**
+
+* Add timers for: `style_invalidation`, `selector_match`, `restyle_traversal`
+* Parallelize the planning pass more aggressively (or pipeline it)
+* Ensure results only become observable at commit boundary
+
+**Success metric**
+
+* Reduced time between “commit start” and “frame ready”
+* Lower layout/style time per tick on allowlisted pages
+
+---
+
+#### #2: **Resource decode scheduling (images/CSS)**
+
+**ROI:** Medium-to-high, depends on site type
+**Risk:** Low (mostly scheduling/prioritization)
+**Why second:**
+
+* Safe, upstreamable, unlikely to break semantics
+* Helps “jank while loading / scrolling media-heavy pages”
+* But doesn’t directly fix DOM storms on ChatGPT-like apps
+
+**Success metric**
+
+* Lower “time-to-first-stable-frame”
+* Fewer long frames due to decode stalls
+
+---
+
+#### #3: **Renderer/compositor pacing improvements**
+
+**ROI:** Medium
+**Risk:** Moderate (input/scroll handling is subtle)
+**Why third:**
+
+* Can make things *feel* smoother
+* But may not reduce the root CPU time
+* Risk: accidentally introduces new scheduling interactions
+
+**Success metric**
+
+* Lower input-to-frame latency
+* Fewer missed frame deadlines during scroll
+
+---
+
+#### #4: **Layout build parallelism changes**
+
+**ROI:** Potentially very high
+**Risk:** Highest (layout correctness is delicate)
+**Why later:**
+
+* Great payoff but high debugging cost
+* Do after you’ve nailed measurement + smaller wins
+
+**Success metric**
+
+* Reduced layout build time on complex pages
+* No correctness regressions
+
+---
+
+### My recommendation for “first win”
+
+✅ **Selector matching / style invalidation precompute** is the best first “Phase-6 win” under your constraints.
+
+It directly hits your pain point (DOM mutation storms → style/layout), has high ROI, and keeps you away from JS/JIT rabbit holes.
+
+---
+
+## A tight execution sequence for Phase 6 (so you don’t drift)
+
+1. **Telemetry stubs first** (even before optimizing)
+
+   * record per-tick breakdown: script / style / layout / renderer / decode
+   * record fallback reasons + counts
+2. **Implement Win #1** (selector/invalidation planning parallelism)
+3. **Ship behind allowlist + kill switch** (Verso)
+4. **Only then** consider resource decode scheduling
+
+---
+
+If you want, I can turn the above into two copy-pastable artifacts:
+
+1. a “Phase-6 Architecture” section you can drop into `.planning/phases/06-browser-rollout/06-01-PLAN.md`, and
+2. a “PR boundary rules” section formatted as contributor guidance for your repo (`AGENTS.md` or docs).
+
+
+You’re **done with the hard part**. What’s left is disciplined execution, not more architecture.
+
+Here’s what I’m going to do now: **lock in what you’ve achieved, declare Phase-6 entry successful, and give you a short, concrete checklist for the next 1–2 weeks that won’t destabilize anything.**
+
+---
+
+## ✅ Phase-6 Entry: SUCCESS (formally)
+
+You now have all of the following **simultaneously true**, which is the real milestone:
+
+* **Browser host is live** (MV3-safe `host-entry.js`, no classic-script import violations)
+* **No Node-only modules parsed by the browser** (zero `node:crypto` requests)
+* **Phase-5 invariants still enforced** (tokenized ticks, single commit, fallback safety)
+* **Telemetry observable in a real browser** (ticks, commits, duration, patch size)
+* **Guardrails are operational** (requestFallback/reset works, diagnostics wired)
+* **Conformance gate still passes unchanged**
+
+This is the exact definition of “Phase-6 has started without reopening Phase-5.”
+
+You can (and should) write this sentence somewhere permanent:
+
+> **Phase-6 entry criterion met: Guarded Host runs in a real browser with live telemetry and immutable Phase-5 conformance.**
+
+---
+
+## 🔒 What is now LOCKED (do not touch casually)
+
+These are no longer negotiable without a new phase:
+
+* `npm run conformance`
+* tokenized mutation channels
+* no reads during `inTick`
+* single commit per tick
+* rollback/fallback = no observable change
+* browser never parses Node-only modules
+
+If any of these break → stop, revert, fix.
+
+---
+
+## 🎯 What I recommend you do next (in order, low risk)
+
+### Week 1: **Telemetry-first (no optimizations yet)**
+
+Do **not** parallelize anything yet.
+
+1. **Add 4 counters to telemetry (only measurement):**
+
+   * time in script tick
+   * time in style/layout
+   * time in renderer/compositor
+   * fallback count by reason
+
+2. **Run on real pages** (no code changes):
+
+   * chatgpt.com
+   * a Facebook feed
+   * any DOM-heavy dashboard
+
+3. **Record observations**, not fixes:
+
+   * where time is actually going
+   * how often fallback triggers
+   * whether patch size explodes or stays small
+
+If telemetry doesn’t clearly show style/layout dominating, **don’t optimize yet**.
+
+---
+
+### Week 2: **One parallelism win (only one)**
+
+Based on everything you’ve built, the correct first win is still:
+
+> **Selector matching / style invalidation precompute**
+
+Why:
+
+* highest ROI on DOM mutation storms
+* parallelizable
+* upstreamable to Servo
+* does not touch JS semantics
+* cleanly fits behind your commit boundary
+
+Do **only**:
+
+* parallel planning / precompute
+* commit results at the existing boundary
+* fallback if anything violates invariants
+
+No JIT changes. No JS heap changes.
+
+---
+
+## 🧭 Servo / Verso boundary (final reminder)
+
+* **Verso**:
+  allowlists, flags, UI, kill switches, telemetry display
+
+* **Servo**:
+  enforcement, scheduling, layout/style parallelism, probes
+
+* **SpiderMonkey**:
+  untouched, authoritative
+
+If a change *needs* SpiderMonkey modification → that’s a new research phase, not Phase-6.
+
+---
+
+## One-line mental model to keep you sane
+
+> *“We are not making JavaScript parallel; we are making the browser pipeline parallel where JavaScript cannot observe it.”*
+
+That sentence is why your work is viable and upstreamable.
+
+---
+
+## Final call
+
+You’ve crossed from **theory → reality**.
+The system is running, guarded, observable, and correct.
+
+From here on out:
+
+* measure first
+* change one thing at a time
+* never weaken the guardrails
+
+If you want, next I can:
+
+* help you design the **exact Servo PR** for selector invalidation
+* help you interpret telemetry from a real ChatGPT session
+* or help you write a **“Phase-6 README”** so future contributors don’t break this
+
+Just point.

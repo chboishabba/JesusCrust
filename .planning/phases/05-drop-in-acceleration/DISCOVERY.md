@@ -47,6 +47,7 @@
 - `prototypes/dropin/adapter.js` exposes `createDropInHost()` that buffers writes (EnsureNode, SetText, SetAttr, AppendChild) before invoking the js-host runner's `beginTick`/`commitBatch`. It reuses `fingerprintFromSerialized`.
 - `prototypes/dropin/example.js` simulates two ticks, logging serialization + fingerprint on each to prove deterministic batching.
 - `prototypes/dropin/framework.js` / `framework-example.js` render a React-like view tree into the adapter: attributes, text, and event listeners are applied via host ops, and `addEventListener` captures widget events during commit.
+- `prototypes/dropin/preact-renderer.js` / `preact-example.js` prove a real renderer lifecycle can drive the adapter while preserving single-commit ticks and deterministic fingerprints.
 - The prototype validates the DOM-equivalent + adapter approach, proves event bridging for widgets, and confirms why DOM monkey-patching is still too brittle for this phase.
 - Added truth tests (`microtask-test.js`, `mutation-test.js`, `identity-test.js`) to prove microtasks, mutation guard, and identity invariants.
 - Added `replay-test.js` to assert deterministic replay from recorded batches.
