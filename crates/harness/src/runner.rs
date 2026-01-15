@@ -2,8 +2,8 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-use rquickjs::{Context, Ctx, Error, Function, Object, Runtime};
 use rquickjs::prelude::{Func, Rest};
+use rquickjs::{Context, Ctx, Error, Function, Object, Runtime};
 
 use crate::transaction::{CommitOutcome, Transaction};
 use crate::EffectRecord;
@@ -56,7 +56,8 @@ impl HarnessRunner {
     }
 
     pub fn run_fixture<P: AsRef<Path>>(&mut self, path: P) -> Result<ExecutionResult, Error> {
-        self.context.with(|ctx| ctx.eval_file::<(), _>(path.as_ref()))?;
+        self.context
+            .with(|ctx| ctx.eval_file::<(), _>(path.as_ref()))?;
         Ok(self.snapshot())
     }
 

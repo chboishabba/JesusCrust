@@ -7,7 +7,9 @@ fn effect_queue_preserves_order_and_clears() {
         node: NodeId::new(1),
         text: "alpha".to_string(),
     };
-    let second = PatchOp::Remove { node: NodeId::new(2) };
+    let second = PatchOp::Remove {
+        node: NodeId::new(2),
+    };
 
     queue.push(first.clone());
     queue.push(second.clone());

@@ -1,5 +1,5 @@
 import { createRunner } from '../../packages/js-host/src/runner.js';
-import { fingerprintFromSerialized } from '../../packages/js-host/src/replay.js';
+import { fingerprintFromSerialized } from '../../packages/js-host/src/replay.js?browser=1';
 
 const ensurePatch = (kind, payload) => ({ kind, ...payload });
 

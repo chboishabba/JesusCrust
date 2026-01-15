@@ -11,7 +11,9 @@ fn scheduler_coalesces_ops_into_single_batch() {
         })
         .expect("enqueue should work");
     scheduler
-        .enqueue_op(PatchOp::Remove { node: NodeId::new(2) })
+        .enqueue_op(PatchOp::Remove {
+            node: NodeId::new(2),
+        })
         .expect("enqueue should work");
 
     let batch = scheduler.commit_tick().expect("commit should work");
@@ -34,7 +36,9 @@ fn scheduler_resets_for_next_tick() {
 
     scheduler.begin_tick().unwrap();
     scheduler
-        .enqueue_op(PatchOp::Remove { node: NodeId::new(3) })
+        .enqueue_op(PatchOp::Remove {
+            node: NodeId::new(3),
+        })
         .unwrap();
     scheduler.commit_tick().unwrap();
 
