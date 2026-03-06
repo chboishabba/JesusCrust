@@ -3,13 +3,11 @@
 ## Purpose
 
 Phase-6 integrates the Phase-5 execution model into a real browser environment **without weakening its guarantees**.
-The headline is multithreaded compute with deterministic, budgeted commits back to the DOM.
 
 This phase exists to:
 
 * observe real-world performance
 * add parallelism only where semantics are preserved
-* keep main-thread commits bounded and deterministic
 * prevent regressions in determinism and safety
 
 ## What is LOCKED (do not break)

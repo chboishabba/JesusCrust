@@ -72,7 +72,7 @@ where
 
         #[cfg(feature = "phase6-telemetry")]
         if let Some(recorder) = recorder {
-            recorder.record_selector_invalidation(start.elapsed(), 1, ctx.reads(), 0);
+            recorder.record_selector_evaluation(start.elapsed(), ctx.reads());
         }
 
         output

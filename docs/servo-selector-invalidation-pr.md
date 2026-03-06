@@ -31,31 +31,16 @@ Telemetry must call into the `Phase6TelemetryRecorder`, which aggregates per-tic
 
 ## Telemetry
 
-Emit the following counters per tick so the Phase-6 UI can attribute gains and compute the decision ratios described in `docs/phase6_browser_ui.md`:
+Emit the following counters per tick so the Phase-6 UI can attribute gains:
 
 * `selector_invalidation_ms` — wall-clock time spent planning selector work.
 * `selectors_evaluated` — number of selector rules touched during planning.
 * `elements_invalidated` — how many nodes were marked dirty.
 * `restyled_elements` — nodes that actually changed style so you can compare invalidated vs. restyled scope.
 
-Telemetry records must also mirror the mandatory fields (`tick_id`, `fingerprint`, `total_tick_ms`, `script_ms`, `style_recalc_ms`, `patch_ops`, `patch_bytes`, `fallback_kind`, etc.) documented in `docs/phase6_browser_ui.md` so the Phase-6 UI can compute the selector/total tick ratio, the invalidation blow-up ratio, and the redundant-selector ratio before optimizations land.
-
 These feed into the aggregated telemetry described in `docs/phase6_browser_ui.md`.
 
 Telemetry rule: counters must emit once per tick, after the commit/fallback completes. No telemetry hook may mutate DOM state, bypass tick boundaries, or disable guardrail sampling.
-
-## Telemetry-backed PR narrative
-
-Include the following in the PR description so reviewers can validate the Phase-6 criteria before approving:
-
-* Feature flag name + default state, plus how to toggle it in Servo builds.
-* Evidence that telemetry only emits when the flag is enabled and remains a no-op in the default path.
-* Phase-6 UI screenshots or exports showing:
-  - selector invalidation share (`selector_invalidation_ms / total_tick_ms`)
-  - invalidations per patch op (`elements_invalidated / patch_ops`)
-  - selectors per invalidation (`selectors_evaluated / elements_invalidated`)
-  - guardrail health (fallback/rollback rates) and fingerprint stability
-* Confirmation that deterministic fingerprints remain stable and `npm run conformance` stays green.
 
 ## Safety valves
 

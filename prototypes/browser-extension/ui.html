@@ -17,7 +17,6 @@
         justify-content: space-between;
         align-items: center;
         background: #10183b;
-        gap: 1rem;
       }
       main {
         padding: 1.5rem;
@@ -44,29 +43,12 @@
         font-weight: 600;
         cursor: pointer;
       }
-      button.secondary {
-        background: rgba(255, 255, 255, 0.08);
-        color: #f5f7ff;
-      }
       button:disabled {
         opacity: 0.5;
         cursor: not-allowed;
       }
       pre {
         white-space: pre-wrap;
-      }
-      .scroll-box {
-        max-height: 160px;
-        overflow: auto;
-        padding: 0.5rem;
-        border-radius: 0.5rem;
-        background: rgba(3, 7, 18, 0.6);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-      }
-      .header-actions {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
       }
       .status-pill {
         display: inline-flex;
@@ -151,10 +133,7 @@
         <strong>Guarded Host</strong>
         <div class="muted" id="origin-label">Origin: (awaiting host...)</div>
       </div>
-      <div class="header-actions">
-        <button id="open-window" class="secondary" type="button">Open full window</button>
-        <span id="running-pill" class="status-pill stopped">Stopped</span>
-      </div>
+      <span id="running-pill" class="status-pill stopped">Stopped</span>
     </header>
     <main>
       <section>
@@ -238,31 +217,6 @@
             <strong>Nodes touched</strong>
             <span id="selector-nodes">0</span>
           </div>
-          <div class="selector-stat">
-            <strong>Selector invalidation</strong>
-            <span id="selector-invalidation-ms">0ms</span>
-          </div>
-          <div class="selector-stat">
-            <strong>Restyled elements</strong>
-            <span id="selector-restyled">0</span>
-          </div>
-        </div>
-      </section>
-      <section>
-        <h2>Decision ratios</h2>
-        <div class="selector-grid">
-          <div class="selector-stat">
-            <strong>Invalidation share</strong>
-            <span id="ratio-invalidation-share">0%</span>
-          </div>
-          <div class="selector-stat">
-            <strong>Invalidations per op</strong>
-            <span id="ratio-invalidations-per-op">0</span>
-          </div>
-          <div class="selector-stat">
-            <strong>Selectors per invalidation</strong>
-            <span id="ratio-selectors-per-invalidation">0</span>
-          </div>
         </div>
       </section>
       <section>
@@ -283,35 +237,6 @@
         </div>
       </section>
       <section>
-        <h2>Rolling stats (last 60 commits)</h2>
-        <div class="health-grid">
-          <div class="health-card">
-            <strong>Avg total</strong>
-            <span id="rolling-total-avg">0ms</span>
-          </div>
-          <div class="health-card">
-            <strong>P95 total</strong>
-            <span id="rolling-total-p95">0ms</span>
-          </div>
-          <div class="health-card">
-            <strong>Avg selector inval</strong>
-            <span id="rolling-selector-avg">0ms</span>
-          </div>
-          <div class="health-card">
-            <strong>Avg style</strong>
-            <span id="rolling-style-avg">0ms</span>
-          </div>
-          <div class="health-card">
-            <strong>Avg layout</strong>
-            <span id="rolling-layout-avg">0ms</span>
-          </div>
-          <div class="health-card">
-            <strong>Avg render</strong>
-            <span id="rolling-render-avg">0ms</span>
-          </div>
-        </div>
-      </section>
-      <section>
         <h2>Fingerprint stability</h2>
         <div class="fingerprint-grid">
           <div class="health-card">
@@ -326,7 +251,7 @@
       </section>
       <section>
         <h2>Diagnostics</h2>
-        <pre id="diagnostics" class="scroll-box">Waiting for diagnostics...</pre>
+        <pre id="diagnostics">Waiting for diagnostics...</pre>
       </section>
       <section>
         <h2>Control</h2>
@@ -339,10 +264,6 @@
           <div>
             <label>Reset host</label>
             <button id="reset-button">Release fallback</button>
-          </div>
-          <div>
-            <label>Telemetry export</label>
-            <button id="export-button">Export telemetry JSON</button>
           </div>
         </div>
       </section>

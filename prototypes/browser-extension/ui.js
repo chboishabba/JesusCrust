@@ -1,4 +1,6 @@
-const CHANNEL = 'verso-guarded-host';
+import { startGuardedBrowserHost } from './host.js?browser=1';
+
+startGuardedBrowserHost();
 const originLabel = document.getElementById('origin-label');
 const runningPill = document.getElementById('running-pill');
 const fallbackReasonLabel = document.getElementById('fallback-reason');
@@ -14,8 +16,6 @@ const diagnosticsLabel = document.getElementById('diagnostics');
 const fallbackButton = document.getElementById('fallback-button');
 const fallbackReasonInput = document.getElementById('fallback-reason-input');
 const resetButton = document.getElementById('reset-button');
-const exportButton = document.getElementById('export-button');
-const openWindowButton = document.getElementById('open-window');
 
 const workScriptBar = document.getElementById('work-script-bar');
 const workStyleBar = document.getElementById('work-style-bar');
@@ -31,12 +31,6 @@ const workTotalValue = document.getElementById('work-total');
 const selectorCount = document.getElementById('selector-count');
 const selectorElements = document.getElementById('selector-elements');
 const selectorNodes = document.getElementById('selector-nodes');
-const selectorInvalidationMs = document.getElementById('selector-invalidation-ms');
-const selectorRestyled = document.getElementById('selector-restyled');
-
-const ratioInvalidationShare = document.getElementById('ratio-invalidation-share');
-const ratioInvalidationsPerOp = document.getElementById('ratio-invalidations-per-op');
-const ratioSelectorsPerInvalidation = document.getElementById('ratio-selectors-per-invalidation');
 
 const guardrailRateLabel = document.getElementById('guardrail-rate');
 const guardrailCountLabel = document.getElementById('guardrail-count');
@@ -45,62 +39,23 @@ const guardrailReasonLabel = document.getElementById('guardrail-reason');
 const fingerprintValue = document.getElementById('fingerprint-value');
 const fingerprintStability = document.getElementById('fingerprint-stability');
 
-const rollingTotalAvg = document.getElementById('rolling-total-avg');
-const rollingTotalP95 = document.getElementById('rolling-total-p95');
-const rollingSelectorAvg = document.getElementById('rolling-selector-avg');
-const rollingStyleAvg = document.getElementById('rolling-style-avg');
-const rollingLayoutAvg = document.getElementById('rolling-layout-avg');
-const rollingRenderAvg = document.getElementById('rolling-render-avg');
-
-function renderUnavailable(message) {
-  originLabel.textContent = `Origin: ${message}`;
-  runningPill.textContent = 'Stopped';
-  runningPill.classList.remove('running', 'stopped');
-  runningPill.classList.add('stopped');
-  tickCountLabel.textContent = 'Ticks: 0';
-  commitCountLabel.textContent = 'Commits: 0';
-  fallbackCountLabel.textContent = 'Fallbacks: 0';
-  commitDurationLabel.textContent = 'Duration: —';
-  commitPatchSizeLabel.textContent = 'Patch size: —';
-  commitFingerprintLabel.textContent = 'Fingerprint: —';
-  lastCommitLabel.textContent = 'Last commit: not available';
-  lastBatchLabel.textContent = 'Last batch: not available';
-  fallbackReasonLabel.textContent = 'Fallback status: none';
-  diagnosticsLabel.textContent = 'Waiting for diagnostics...';
-  selectorCount.textContent = '0';
-  selectorElements.textContent = '0';
-  selectorNodes.textContent = '0';
-  selectorInvalidationMs.textContent = '0ms';
-  selectorRestyled.textContent = '0';
-  ratioInvalidationShare.textContent = '0%';
-  ratioInvalidationsPerOp.textContent = '0';
-  ratioSelectorsPerInvalidation.textContent = '0';
-  guardrailRateLabel.textContent = '0 per 1k ticks';
-  guardrailCountLabel.textContent = '0';
-  guardrailReasonLabel.textContent = 'none';
-  fingerprintValue.textContent = '—';
-  fingerprintStability.textContent = 'unknown';
-  rollingTotalAvg.textContent = '0ms';
-  rollingTotalP95.textContent = '0ms';
-  rollingSelectorAvg.textContent = '0ms';
-  rollingStyleAvg.textContent = '0ms';
-  rollingLayoutAvg.textContent = '0ms';
-  rollingRenderAvg.textContent = '0ms';
-}
-
-function updateSurface(snapshot) {
-  if (!snapshot) {
-    renderUnavailable('awaiting host...');
+function updateSurface() {
+  const surface = window.__versoGuardedHost;
+  if (!surface) {
+    originLabel.textContent = 'Origin: guardrail host loading…';
+    runningPill.textContent = 'Initializing';
+    runningPill.classList.remove('running', 'stopped');
+    runningPill.classList.add('stopped');
     return;
   }
 
-  originLabel.textContent = `Origin: ${snapshot.origin}`;
-  const isRunning = snapshot.running;
+  originLabel.textContent = `Origin: ${surface.origin}`;
+  const isRunning = surface.running();
   runningPill.textContent = isRunning ? 'Running' : 'Fallback';
   runningPill.classList.toggle('running', isRunning);
   runningPill.classList.toggle('stopped', !isRunning);
 
-  const telemetry = snapshot.telemetry;
+  const telemetry = surface.getTelemetry();
   tickCountLabel.textContent = `Ticks: ${telemetry.ticks.length}`;
   commitCountLabel.textContent = `Commits: ${telemetry.commits.length}`;
   fallbackCountLabel.textContent = `Fallbacks: ${telemetry.fallbacks.length}`;
@@ -123,14 +78,14 @@ function updateSurface(snapshot) {
     ? `Fallback status: ${fallback.reason} @ tick ${fallback.tick ?? 'unknown'}`
     : 'Fallback status: none';
 
-  const diagnostics = snapshot.diagnostics;
+  const diagnostics = surface.getDiagnostics();
   diagnosticsLabel.textContent = diagnostics.length > 0
     ? diagnostics
         .map((entry) => `${entry.metaKind} ${entry.reason} (tick ${entry.tickId})`)
         .join('\n')
     : 'No diagnostics yet';
 
-  const lastBatch = snapshot.lastBatch;
+  const lastBatch = surface.getLastBatch();
   if (lastBatch) {
     lastBatchLabel.textContent = `${lastBatch.metaKind} (tick ${lastBatch.tickId ?? '??'})`;
   } else {
@@ -157,21 +112,6 @@ function updateSurface(snapshot) {
   selectorCount.textContent = `${workMetrics.selectors_evaluated ?? 0}`;
   selectorElements.textContent = `${workMetrics.elements_invalidated ?? 0}`;
   selectorNodes.textContent = `${workMetrics.nodes_touched ?? 0}`;
-  selectorInvalidationMs.textContent = `${(durations.selector_invalidation_ms ?? 0).toFixed(1)}ms`;
-  selectorRestyled.textContent = `${workMetrics.restyled_elements ?? 0}`;
-
-  const invalidationShare = ratio(durations.selector_invalidation_ms ?? 0, totalDuration);
-  ratioInvalidationShare.textContent = `${(invalidationShare * 100).toFixed(1)}%`;
-  ratioInvalidationsPerOp.textContent = formatRatio(
-    workMetrics.elements_invalidated ?? 0,
-    workMetrics.patch_ops ?? workMetrics.dom_mutations ?? 0
-  );
-  ratioSelectorsPerInvalidation.textContent = formatRatio(
-    workMetrics.selectors_evaluated ?? 0,
-    workMetrics.elements_invalidated ?? 0
-  );
-
-  updateRollingStats(telemetry.commits);
 
   const tickCount = telemetry.ticks.length;
   const fallbackCount = telemetry.fallbacks.length;
@@ -208,183 +148,25 @@ function updateWorkRow(bar, value, duration, max) {
   }
 }
 
-function ratio(numerator, denominator) {
-  if (!denominator) {
-    return 0;
-  }
-  return numerator / denominator;
-}
-
-function formatRatio(numerator, denominator) {
-  if (!denominator) {
-    return '0';
-  }
-  return (numerator / denominator).toFixed(2);
-}
-
-function average(values) {
-  if (!values.length) {
-    return 0;
-  }
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function percentile(values, percentileValue) {
-  if (!values.length) {
-    return 0;
-  }
-  const sorted = [...values].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((percentileValue / 100) * sorted.length) - 1));
-  return sorted[idx];
-}
-
-function updateRollingStats(commits) {
-  const windowSize = 60;
-  const slice = commits.slice(-windowSize);
-  const totals = slice.map((commit) => commit?.durations?.total_ms ?? commit?.duration ?? 0);
-  const selector = slice.map((commit) => commit?.durations?.selector_invalidation_ms ?? 0);
-  const style = slice.map((commit) => commit?.durations?.style_recalc_ms ?? commit?.durations?.style_ms ?? 0);
-  const layout = slice.map((commit) => commit?.durations?.layout_ms ?? 0);
-  const render = slice.map((commit) => commit?.durations?.render_ms ?? 0);
-
-  rollingTotalAvg.textContent = `${average(totals).toFixed(1)}ms`;
-  rollingTotalP95.textContent = `${percentile(totals, 95).toFixed(1)}ms`;
-  rollingSelectorAvg.textContent = `${average(selector).toFixed(1)}ms`;
-  rollingStyleAvg.textContent = `${average(style).toFixed(1)}ms`;
-  rollingLayoutAvg.textContent = `${average(layout).toFixed(1)}ms`;
-  rollingRenderAvg.textContent = `${average(render).toFixed(1)}ms`;
-}
-
-function getCandidateTabs() {
-  return new Promise((resolve) => {
-    if (!chrome?.tabs?.query) {
-      resolve([]);
-      return;
-    }
-    chrome.tabs.query({ currentWindow: true }, (tabs) => {
-      const sorted = [...(tabs ?? [])].sort((a, b) => {
-        if (a.active === b.active) {
-          return 0;
-        }
-        return a.active ? -1 : 1;
-      });
-      resolve(sorted);
-    });
-  });
-}
-
-function sendRequestToTab(tabId, type, payload) {
-  return new Promise((resolve) => {
-    if (!tabId || !chrome?.tabs?.sendMessage) {
-      resolve({ ok: false, error: 'No active tab' });
-      return;
-    }
-    chrome.tabs.sendMessage(
-      tabId,
-      { channel: CHANNEL, type, payload },
-      (response) => {
-        const lastError = chrome.runtime?.lastError;
-        if (lastError) {
-          resolve({ ok: false, error: lastError.message });
-          return;
-        }
-        resolve(response ?? { ok: false, error: 'No response from host' });
-      }
-    );
-  });
-}
-
-async function sendRequest(type, payload) {
-  const tabs = await getCandidateTabs();
-  if (!tabs.length) {
-    return { ok: false, error: 'No tabs available' };
-  }
-  for (const tab of tabs) {
-    if (!tab?.id) {
-      continue;
-    }
-    if (tab.url?.startsWith('chrome-extension://')) {
-      continue;
-    }
-    const response = await sendRequestToTab(tab.id, type, payload);
-    if (response?.ok) {
-      return response;
-    }
-  }
-  return { ok: false, error: 'No response from host' };
-}
-
-let refreshInFlight = false;
-
-async function refreshSnapshot() {
-  if (refreshInFlight) {
+function requestFallback() {
+  const surface = window.__versoGuardedHost;
+  if (!surface) {
     return;
   }
-  refreshInFlight = true;
-  const response = await sendRequest('getSnapshot');
-  refreshInFlight = false;
-  if (response?.ok) {
-    updateSurface(response.payload);
-  } else {
-    renderUnavailable(response?.error ?? 'awaiting host...');
-  }
-}
-
-async function requestFallback() {
   const reason = fallbackReasonInput.value || 'manual override';
-  const response = await sendRequest('requestFallback', { reason });
-  if (response?.ok) {
-    updateSurface(response.payload);
-  }
+  surface.requestFallback(reason);
 }
 
-async function resetSurface() {
-  const response = await sendRequest('reset');
-  if (response?.ok) {
-    updateSurface(response.payload);
+function resetSurface() {
+  const surface = window.__versoGuardedHost;
+  if (!surface) {
+    return;
   }
+  surface.reset();
 }
 
 fallbackButton.addEventListener('click', requestFallback);
 resetButton.addEventListener('click', resetSurface);
-if (exportButton) {
-  exportButton.addEventListener('click', async () => {
-    const response = await sendRequest('getSnapshot');
-    if (!response?.ok) {
-      renderUnavailable(response?.error ?? 'export failed');
-      return;
-    }
-    const snapshot = response.payload;
-    const json = JSON.stringify(
-      snapshot?.telemetry ?? {},
-      (key, value) => (typeof value === 'bigint' ? value.toString() : value),
-      2
-    );
-    const origin = snapshot?.origin ?? 'unknown-origin';
-    const safeOrigin = origin.replace(/[^a-zA-Z0-9.-]+/g, '_');
-    const filename = `phase6-telemetry-${safeOrigin}-${Date.now()}.json`;
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  });
-}
-if (openWindowButton) {
-  openWindowButton.addEventListener('click', () => {
-    if (!chrome?.windows?.create) {
-      return;
-    }
-    chrome.windows.create({
-      url: chrome.runtime.getURL('ui.html'),
-      type: 'popup',
-      width: 1100,
-      height: 800,
-    });
-  });
-}
 
-setInterval(refreshSnapshot, 1000);
-refreshSnapshot();
+setInterval(updateSurface, 1000);
+updateSurface();

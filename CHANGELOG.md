@@ -2,9 +2,6 @@
 
 ## Unreleased
 
-- Added Phase 6.04 worker protocol plan plus telemetry sample README for Phase-6 measurement captures.
-- Reframed the project headline toward off-main-thread compute with deterministic, budgeted commits in `README.md` and `PROJECT_CONTEXT.md`.
-- Updated Phase 6 and planning docs to align the roadmap and state with the multithread-first framing.
 - Documented the Phase 6 guardrail host UI surface and telemetry contract so contributors know how the extension controls interact with `window.__versoGuardedHost`.
 - Added the guarded browser host prototype plus telemetry helper and UI telemetry dashboard so guardrails can show runtime stats, fallback reasons, and control surfaces in the browser shell.
 - Added `manifest.json` plus docs describing how the extension packages the content script injection + popup UI so Verso always wires telemetry/fallback controls to `host.js`/`ui.html`.
