@@ -4,5 +4,9 @@ telemetry/
 prototypes/browser-extension/dropin/
 prototypes/browser-extension/packages/
 .planning/phases/06-browser-rollout/telemetry-samples/
+.planning/phases/06-browser-rollout/*.md
+docs/phase6_telemetry_schema.md
+mabo.pdf
+prototypes/browser-extension/page-host.js
 *.kate-swp
 *.swp
