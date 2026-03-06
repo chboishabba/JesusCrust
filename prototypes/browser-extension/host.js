@@ -1,8 +1,64 @@
-import { createDropInHost } from '../dropin/adapter.js?browser=1';
+import { createDropInHost } from './dropin/adapter.js';
 import { createTelemetry } from './telemetry.js';
 
 const FALLBACK_STORAGE_KEY = 'verso.browser.host:fallback';
 const FRAME_TIMEOUT_MS = 16;
+
+function coerceNumber(value, fallback = 0) {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function coerceCount(value, fallback = 0) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value));
+  }
+  return fallback;
+}
+
+function normalizeDurations(input, measuredDuration) {
+  const data = input ?? {};
+  const styleRecalcMs = coerceNumber(
+    data.style_recalc_ms ?? data.style_ms ?? data.style_time_ms,
+    0
+  );
+  const selectorInvalidationMs = coerceNumber(
+    data.selector_invalidation_ms ?? data.selector_match_ms,
+    0
+  );
+  const layoutMs = coerceNumber(data.layout_ms ?? data.layout_time_ms, 0);
+  const renderMs = coerceNumber(data.render_ms ?? data.render_time_ms, 0);
+  const totalMs = coerceNumber(data.total_ms, measuredDuration);
+  const scriptProvided = typeof data.script_ms === 'number'
+    ? data.script_ms
+    : typeof data.js_time_ms === 'number'
+      ? data.js_time_ms
+      : null;
+  const scriptMs = scriptProvided ?? Math.max(0, totalMs - (styleRecalcMs + layoutMs + renderMs));
+  return {
+    script_ms: coerceNumber(scriptMs, totalMs),
+    style_ms: styleRecalcMs,
+    style_recalc_ms: styleRecalcMs,
+    selector_invalidation_ms: selectorInvalidationMs,
+    layout_ms: layoutMs,
+    render_ms: renderMs,
+    total_ms: totalMs,
+  };
+}
+
+function normalizeWork(input, payloadSize, patchOpsHint) {
+  const data = input ?? {};
+  const domMutations = coerceCount(data.dom_mutations ?? data.patch_ops, 0);
+  const patchOps = coerceCount(data.patch_ops ?? domMutations ?? patchOpsHint, patchOpsHint ?? 0);
+  return {
+    dom_mutations: domMutations || patchOps,
+    nodes_touched: coerceCount(data.nodes_touched, 0),
+    selectors_evaluated: coerceCount(data.selectors_evaluated, 0),
+    elements_invalidated: coerceCount(data.elements_invalidated ?? data.invalidated_elements, 0),
+    restyled_elements: coerceCount(data.restyled_elements ?? data.elements_restyled, 0),
+    patch_bytes: coerceCount(data.patch_bytes, payloadSize),
+    patch_ops: patchOps || domMutations,
+  };
+}
 
 function getGlobalWindow(windowOverride) {
   if (windowOverride) {
@@ -151,28 +207,16 @@ class GuardedBrowserHost {
     const start = this.window?.performance?.now?.() ?? Date.now();
     try {
       const result = this.adapter.commit(this.tickToken);
-      const duration = (this.window?.performance?.now?.() ?? Date.now()) - start;
+      const measuredDuration = (this.window?.performance?.now?.() ?? Date.now()) - start;
       const payloadSize = typeof result.serialized === 'string'
         ? result.serialized.length
         : Array.isArray(result.serialized)
           ? result.serialized.length
           : 0;
-      const work = {
-        dom_mutations: Array.isArray(result.serialized)
-          ? result.serialized.length
-          : 0,
-        nodes_touched: 0,
-        selectors_evaluated: 0,
-        elements_invalidated: 0,
-        patch_bytes: payloadSize,
-      };
-      const durations = {
-        script_ms: duration,
-        style_ms: 0,
-        layout_ms: 0,
-        render_ms: 0,
-        total_ms: duration,
-      };
+      const telemetry = result?.telemetry ?? result?.metrics ?? {};
+      const durations = normalizeDurations(telemetry.durations ?? telemetry, measuredDuration);
+      const work = normalizeWork(telemetry.work ?? telemetry, payloadSize, result?.patchOps);
+      const duration = durations.total_ms ?? measuredDuration;
       this.telemetry.recordCommit({
         tickId: this.tickToken.tickId,
         duration,

@@ -1,8 +1,20 @@
-target/
-chatgpt_history.sqlite3*
-telemetry/
-prototypes/browser-extension/dropin/
-prototypes/browser-extension/packages/
-.planning/phases/06-browser-rollout/telemetry-samples/
-*.kate-swp
+# Build artifacts
+/target/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+build/
 *.swp
+*.kate-swp
+.DS_Store
+
+# Chat history / local DBs
+chat*_history*.sqlite*
+chatgpt_history*.sqlite*
+codex_history*.sqlite*
+*chat_history*.sqlite*
+chatgpt_history*.sqlite*-wal
+chatgpt_history*.sqlite*-shm
+codex_history*.sqlite*-wal
+codex_history*.sqlite*-shm

@@ -7,7 +7,7 @@
     "default_title": "Guarded Host",
     "default_popup": "ui.html"
   },
-  "permissions": ["storage"],
+  "permissions": ["storage", "tabs"],
   "host_permissions": ["<all_urls>"],
   "content_scripts": [
     {
@@ -18,7 +18,17 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["ui.html", "ui.js"],
+      "resources": [
+        "ui.html",
+        "ui.js",
+        "page-host.js",
+        "host.js",
+        "telemetry.js",
+        "packages/js-host/src/*.js",
+        "packages/js-host/src/**/*.js",
+        "dropin/adapter.js",
+        "dropin/*.js"
+      ],
       "matches": ["<all_urls>"]
     }
   ]

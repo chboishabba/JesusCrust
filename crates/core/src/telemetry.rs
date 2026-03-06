@@ -22,7 +22,8 @@ impl Default for TickResult {
 #[derive(Debug, Clone, Default)]
 pub struct PhaseDurations {
     pub script_ms: f64,
-    pub style_ms: f64,
+    pub style_recalc_ms: f64,
+    pub selector_invalidation_ms: f64,
     pub layout_ms: f64,
     pub render_ms: f64,
     pub total_ms: f64,
@@ -35,7 +36,9 @@ pub struct WorkBreakdown {
     pub nodes_touched: usize,
     pub selectors_evaluated: usize,
     pub elements_invalidated: usize,
+    pub restyled_elements: usize,
     pub patch_bytes: usize,
+    pub patch_ops: usize,
 }
 
 /// Guardrail events such as rollbacks or fallbacks, along with the phase they happened in.
@@ -65,6 +68,27 @@ pub struct TickTelemetry {
     pub work: WorkBreakdown,
     pub fingerprint: Option<u64>,
     pub guardrail: Option<GuardrailEvent>,
+}
+
+/// Phase-6 telemetry fields aligned with docs/phase6_telemetry_schema.md.
+#[derive(Debug, Clone, Default)]
+pub struct Phase6TelemetrySample {
+    pub tick_id: u64,
+    pub commit_id: u64,
+    pub fingerprint: Option<u64>,
+    pub total_tick_ms: f64,
+    pub script_ms: f64,
+    pub style_recalc_ms: f64,
+    pub selector_invalidation_ms: f64,
+    pub layout_ms: f64,
+    pub render_ms: f64,
+    pub selectors_evaluated: usize,
+    pub elements_invalidated: usize,
+    pub restyled_elements: usize,
+    pub patch_ops: usize,
+    pub patch_bytes: usize,
+    pub fallback_kind: Option<TickResult>,
+    pub fallback_reason: Option<String>,
 }
 
 #[cfg(feature = "phase6-telemetry")]
@@ -111,8 +135,12 @@ impl TelemetryRecorder {
 
     pub fn record_style_duration(&mut self, duration: Duration) {
         if let Some(current) = &mut self.current {
-            current.durations.style_ms += duration.as_secs_f64() * 1000.0;
+            current.durations.style_recalc_ms += duration.as_secs_f64() * 1000.0;
         }
+    }
+
+    pub fn record_style_recalc_duration(&mut self, duration: Duration) {
+        self.record_style_duration(duration);
     }
 
     pub fn record_layout_duration(&mut self, duration: Duration) {
@@ -127,13 +155,26 @@ impl TelemetryRecorder {
         }
     }
 
-    pub fn record_selector_evaluation(&mut self, duration: Duration, elements_invalidated: usize) {
+    pub fn record_selector_invalidation(
+        &mut self,
+        duration: Duration,
+        selectors_evaluated: usize,
+        elements_invalidated: usize,
+        restyled_elements: usize,
+    ) {
         if let Some(current) = &mut self.current {
-            current.durations.style_ms += duration.as_secs_f64() * 1000.0;
-            current.work.selectors_evaluated += 1;
+            let elapsed_ms = duration.as_secs_f64() * 1000.0;
+            current.durations.style_recalc_ms += elapsed_ms;
+            current.durations.selector_invalidation_ms += elapsed_ms;
+            current.work.selectors_evaluated += selectors_evaluated;
             current.work.elements_invalidated += elements_invalidated;
             current.work.nodes_touched += elements_invalidated;
+            current.work.restyled_elements += restyled_elements;
         }
+    }
+
+    pub fn record_selector_evaluation(&mut self, duration: Duration, elements_invalidated: usize) {
+        self.record_selector_invalidation(duration, 1, elements_invalidated, 0);
     }
 
     pub fn record_node_touches(&mut self, count: usize) {
@@ -145,7 +186,9 @@ impl TelemetryRecorder {
     pub fn record_patch(&mut self, batch: &PatchBatch) {
         if let Some(current) = &mut self.current {
             let bytes = estimate_patch_bytes(batch);
-            current.work.dom_mutations = batch.len();
+            let ops = batch.len();
+            current.work.dom_mutations = ops;
+            current.work.patch_ops = ops;
             current.work.patch_bytes = bytes;
             current.fingerprint = Some(fingerprint_from_batch(batch));
         }
@@ -160,13 +203,14 @@ impl TelemetryRecorder {
     pub fn finalize_tick(&mut self, result: TickResult) {
         if let Some(active) = self.current.take() {
             let total_ms = active.start.elapsed().as_secs_f64() * 1000.0;
-            let style_ms = active.durations.style_ms;
+            let style_ms = active.durations.style_recalc_ms;
             let layout_ms = active.durations.layout_ms;
             let render_ms = active.durations.render_ms;
             let script_ms = (total_ms - (style_ms + layout_ms + render_ms)).max(0.0);
             let durations = PhaseDurations {
                 script_ms,
-                style_ms,
+                style_recalc_ms: style_ms,
+                selector_invalidation_ms: active.durations.selector_invalidation_ms,
                 layout_ms,
                 render_ms,
                 total_ms,
@@ -193,6 +237,37 @@ impl TelemetryRecorder {
 
     pub fn current_tick_id(&self) -> Option<u64> {
         self.current.as_ref().map(|active| active.tick_id)
+    }
+
+    pub fn phase6_snapshot(&self) -> Vec<Phase6TelemetrySample> {
+        self.ticks
+            .iter()
+            .map(|tick| {
+                let guardrail = tick.guardrail.as_ref();
+                Phase6TelemetrySample {
+                    tick_id: tick.tick_id,
+                    commit_id: tick.tick_id,
+                    fingerprint: tick.fingerprint,
+                    total_tick_ms: tick.durations.total_ms,
+                    script_ms: tick.durations.script_ms,
+                    style_recalc_ms: tick.durations.style_recalc_ms,
+                    selector_invalidation_ms: tick.durations.selector_invalidation_ms,
+                    layout_ms: tick.durations.layout_ms,
+                    render_ms: tick.durations.render_ms,
+                    selectors_evaluated: tick.work.selectors_evaluated,
+                    elements_invalidated: tick.work.elements_invalidated,
+                    restyled_elements: tick.work.restyled_elements,
+                    patch_ops: if tick.work.patch_ops > 0 {
+                        tick.work.patch_ops
+                    } else {
+                        tick.work.dom_mutations
+                    },
+                    patch_bytes: tick.work.patch_bytes,
+                    fallback_kind: guardrail.map(|event| event.kind),
+                    fallback_reason: guardrail.map(|event| event.reason.clone()),
+                }
+            })
+            .collect()
     }
 }
 
@@ -238,8 +313,17 @@ impl TelemetryRecorder {
 
     pub fn begin_tick(&mut self) {}
     pub fn record_style_duration(&mut self, _duration: Duration) {}
+    pub fn record_style_recalc_duration(&mut self, _duration: Duration) {}
     pub fn record_layout_duration(&mut self, _duration: Duration) {}
     pub fn record_render_duration(&mut self, _duration: Duration) {}
+    pub fn record_selector_invalidation(
+        &mut self,
+        _duration: Duration,
+        _selectors: usize,
+        _elements_invalidated: usize,
+        _restyled_elements: usize,
+    ) {
+    }
     pub fn record_selector_evaluation(&mut self, _duration: Duration, _elements: usize) {}
     pub fn record_node_touches(&mut self, _count: usize) {}
     pub fn record_patch(&mut self, _batch: &PatchBatch) {}
@@ -253,5 +337,8 @@ impl TelemetryRecorder {
     }
     pub fn current_tick_id(&self) -> Option<u64> {
         None
+    }
+    pub fn phase6_snapshot(&self) -> Vec<Phase6TelemetrySample> {
+        Vec::new()
     }
 }

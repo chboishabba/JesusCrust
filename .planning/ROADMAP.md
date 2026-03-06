@@ -2,7 +2,7 @@
 
 ## Overview
 
-Establish deterministic scheduling semantics in a standalone harness first, then build the Rust/WASM core and JS host that apply those semantics to real DOM workloads.
+Establish deterministic scheduling semantics in a standalone harness first, then move heavy compute off the main thread while keeping DOM commits deterministic and budgeted.
 
 ## Domain Expertise
 
@@ -15,10 +15,11 @@ None
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
 - [x] **Phase 1: Execution Harness** - QuickJS-driven harness with fake DOM, effect log, and deterministic replay.
-- [ ] **Phase 2: Rust/WASM Core** - Store, dependency graph, scheduler, and patch op generation.
-- [ ] **Phase 3: JS Host Integration** - JS host applies patch ops and validates batching boundary.
-- [ ] **Phase 4: Developer Experience** - Public API sketch, docs, and example scenarios.
-- [ ] **Phase 5: Drop-in Acceleration Research** - Investigate feasibility of drop-in acceleration for existing apps (research track).
+- [x] **Phase 2: Rust/WASM Core** - Store, dependency graph, scheduler, and patch op generation.
+- [x] **Phase 3: JS Host Integration** - JS host applies patch ops and validates batching boundary.
+- [x] **Phase 4: Developer Experience** - Public API sketch, docs, and example scenarios.
+- [x] **Phase 5: Drop-in Acceleration Research** - Investigate feasibility of drop-in acceleration for existing apps (research track).
+- [ ] **Phase 6: Guarded Browser Rollout** - Telemetry-first browser integration and parallel planning behind commit boundaries.
 
 ## Phase Details
 
@@ -64,12 +65,24 @@ Plans:
 **Goal**: Assess feasibility and constraints for drop-in acceleration of existing apps using the JesusCrust runtime.
 **Depends on**: Phase 3/4 (semantics + API defined)
 **Research**: Deep (integration/compat)
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 - [x] 05-01: Research plan (discovery + constraints)
 - [x] 05-02: Drop-in adapter prototype
 - [x] 05-03: Preact renderer integration
+
+### Phase 6: Guarded Browser Rollout
+**Goal**: Validate Phase-5 semantics in real browsers and prove the first off-thread planning win under a strict commit budget.
+**Depends on**: Phase 5 (adapter contract, conformance)
+**Research**: Moderate (telemetry attribution + worker protocol)
+**Plans**: 3 plans
+
+Plans:
+- [x] 06-01: Guarded browser host + Phase-6 telemetry UI
+- [ ] 06-02: Servo-side telemetry hooks + selector counters
+- [ ] 06-03: Measurement summary and next-win decision
+- [ ] 06-04: Worker protocol + commit-budget plan
 
 ## Progress
 
@@ -83,3 +96,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 3. JS Host Integration | 2/2 | Complete | 2026-01-14 |
 | 4. Developer Experience | 1/1 | Complete | 2026-01-14 |
 | 5. Drop-in Acceleration Research | 3/3 | Complete | 2026-01-14 |
+| 6. Guarded Browser Rollout | 1/4 | In Progress | — |

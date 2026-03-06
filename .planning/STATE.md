@@ -4,17 +4,17 @@
 
 See: .planning/PROJECT.md (updated 2026-01-14)
 
-**Core value:** Deliver deterministic, batched UI commits that keep the main thread responsive under heavy update pressure.
-**Current focus:** Phase 5: Drop-in Acceleration Research
+**Core value:** Deliver off-main-thread compute with deterministic, bounded UI commits that keep the main thread responsive under heavy update pressure.
+**Current focus:** Phase 6: Guarded Browser Rollout
 
 ## Current Position
 
-Phase: 5 of 5 (Drop-in Acceleration Research)
-Plan: 3 of 3 in current phase
-Status: Phase complete
-Last activity: 2026-01-14 — completed 05-03-PLAN.md
+Phase: 6 of 6 (Guarded Browser Rollout)
+Plan: 1 of 4 in current phase
+Status: Phase in progress
+Last activity: 2026-01-17 — added Phase 6.03 telemetry samples + updated measurement summary + added selector telemetry counters in core
 
-Progress: [██████████] 100%
+Progress: [█████████-] 90%
 
 ## Performance Metrics
 
@@ -37,7 +37,7 @@ Progress: [██████████] 100%
 - Last 5 plans: 14 min, 8 min, 8 min, 15 min, 11 min
 - Trend: Stable-fast
 
-*Updated after each plan completion*
+*Metrics are stale after the Phase 6 transition; refresh after the next completed plan.*
 
 ## Accumulated Context
 
@@ -61,7 +61,7 @@ None yet.
 
 ### Blockers/Concerns
 
-None yet.
+- Phase 6 telemetry samples captured, but selector/style/layout/render counters are all zero in browser captures; host/Servo integration still needs to emit selector/style/layout/render durations so selector-dominance ratios can be computed.
 
 ## Session Continuity
 
