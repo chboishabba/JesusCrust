@@ -16,6 +16,7 @@ pub use scheduler::{Scheduler, SchedulerError};
 pub use selector::{Selector, SelectorContext};
 pub use store::Store;
 pub use telemetry::{
-    GuardrailEvent, PhaseDurations, TelemetryRecorder, TickResult, TickTelemetry, WorkBreakdown,
+    GuardrailEvent, Phase6TelemetrySample, PhaseDurations, TelemetryRecorder, TickResult,
+    TickTelemetry, WorkBreakdown,
 };
 pub use types::NodeId;

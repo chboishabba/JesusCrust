@@ -1,6 +1,8 @@
 # Phase 6 Guarded Host UI Surface
 
-Verso Phase 6 exposes a single host guardrail surface at `window.__versoGuardedHost` so UI, policy, and telemetry layers can inspect diagnostics and control the extension without compromising the Servo guardrails:
+Verso Phase 6 exposes a single host guardrail surface at `window.__versoGuardedHost` so UI, policy, and telemetry layers can inspect diagnostics and control the extension without compromising the Servo guardrails.
+
+Because MV3 runs content scripts in an isolated world, `host-entry.js` injects `page-host.js` as a module into the page so the guardrail still owns the page’s `window` object and the popup/code running in the page context can read `window.__versoGuardedHost` directly:
 
 | Field / method | Purpose |
 |---------------|---------|
@@ -187,6 +189,34 @@ interface GuardrailTelemetry {
 ```
 
 Rule: **Telemetry must remain on and faithful to the current contract.** No Phase-6 PR may reduce visibility, bypass tick boundaries, or de-prioritize guardrails. Every telemetry change must keep `npm run conformance` green and preserve the deterministic fingerprint stream.
+
+## Phase-6 validation plan
+
+The day-to-day measurement loop now lives in `.planning/phases/06-browser-rollout/06-03-PLAN.md`. That plan records the representative pages we run the host on, the telemetry samples we collect, and the follow-up actions required when guardrails behave unexpectedly. After each measurement run, append the recorded telemetry files under `.planning/phases/06-browser-rollout/telemetry-samples/` and summarize the key signals in `06-03-SUMMARY.md` so future contributors can see exactly when selectors dominated the tick and why a fallback or rollback fired.
+
+Keep this section in sync whenever the plan or summary changes so we never lose the story about why the Phase-6 host is still feature-flagged off by default. If you need to deviate from the documented workflow, add a semantic-impact note that references `npm run conformance`, the guardrail telemetry tables above, and the `06-03` plan.
+
+## Decision-grade selector telemetry
+
+The selector story is only ready for optimization when the Phase-6 data set answers three questions. Every telemetry capture must therefore include the following **non-negotiable fields** per tick:
+
+| Field | Purpose |
+| --- | --- |
+| `tick_id`, `fingerprint`, `commit_id` | Traceability – keep this aligned with existing guardrail identifiers so deterministic replay still works. |
+| `total_tick_ms`, `patch_ops`, `patch_bytes` | Overall workload so the UI can weigh selector work against the entire commit. |
+| `script_ms`, `style_recalc_ms`, `selector_invalidation_ms` | Execution split; `selector_invalidation_ms` must be a subset of `style_recalc_ms`. |
+| `selectors_evaluated`, `elements_invalidated`, `restyled_elements` | Selector impact; these counters expose how much selector planning hits the document. |
+| `fallback_kind?`, `reason?` | Guardrail health to highlight when the host disabled itself or rolled back state. |
+
+From these values derive the **Phase-6 decision ratios** before touching Servo invalidation logic:
+
+1. `selector_invalidation_ms / total_tick_ms` – determines whether selector work is the dominant latched phase.
+2. `elements_invalidated / patch_ops` – exposes whether small changes trigger large selector storms.
+3. `selectors_evaluated / elements_invalidated` – detects redundant selector work that can be pruned later.
+
+If you cannot answer those three ratios for a given workload, do not proceed with selector-parallelism work yet. Collect more telemetry until selectors consistently appear in the dominant slice, then revisit the optimization plan. Maintain these fields verbatim because downstream PRs (e.g., `docs/servo-selector-invalidation-pr.md`) refer to them.
+
+Selector invalidation PRs must include telemetry evidence from the Phase-6 UI (screenshots or exported JSON) showing the ratios above, guardrail health status, and fingerprint stability. If the UI cannot show those signals, the PR should stop until telemetry catches up.
 
 ## Servo vs. Verso/host ownership
 

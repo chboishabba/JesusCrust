@@ -1,19 +1,20 @@
 # JesusCrust
 
 A Rust/WASM-powered state and scheduling core for JavaScript UIs aimed at reducing lag in large, highly dynamic pages.
-The core idea is to keep DOM writes in JS while moving state graphs, diffing, and scheduling into Rust for better batching and memory behavior.
+The core idea is to move heavy compute off the main thread while keeping DOM writes in JS and committing patches deterministically under a tight main-thread budget.
 
 ## Goals
 
-- Reduce main-thread churn by batching DOM patches and deferring work by priority.
+- Move expensive compute (state updates, diffing, parsing) off the main thread without changing JS semantics.
+- Commit DOM patches deterministically under a bounded, one-commit-per-tick budget.
 - Provide a reactive store with fine-grained dependency tracking and stable node IDs.
 - Enable built-in virtualization for large lists and feeds.
 
 ## Architecture Sketch
 
-- Rust/WASM: store, selectors, dependency graph, scheduler, patch generation.
-- JS host: applies patch ops to the DOM in a single frame.
-- Boundary rule: cross JS↔WASM in batches, not per node.
+- Rust/WASM workers: store, selectors, dependency graph, scheduling, diffing, patch generation.
+- JS host: applies patch ops to the DOM in a single commit on the main thread.
+- Boundary rule: cross JS↔WASM in batches, not per node; keep commits deterministic and budgeted.
 
 ## Planning
 
