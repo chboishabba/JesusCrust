@@ -1,12 +1,2 @@
-# Local SQLite artifacts (often contain session/state; never commit)
-chatgpt_history.sqlite3
-chatgpt_history.sqlite3-*
-
-# Python caches
-__pycache__/
-*.pyc
-
-# Test/CI caches
-.pytest_cache/
-.hypothesis/
-
+target/
+chatgpt_history.sqlite3*
