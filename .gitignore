@@ -1,2 +1,8 @@
 target/
 chatgpt_history.sqlite3*
+telemetry/
+prototypes/browser-extension/dropin/
+prototypes/browser-extension/packages/
+.planning/phases/06-browser-rollout/telemetry-samples/
+*.kate-swp
+*.swp
