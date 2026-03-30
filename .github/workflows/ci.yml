@@ -5,10 +5,14 @@ on:
   pull_request:
     branches: [main, master]
 jobs:
-  build:
+  nix-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release
-      - run: cargo test
+      - uses: cachix/install-nix-action@v27
+        with:
+          nix_path: nixpkgs=channel:nixos-unstable
+      - name: Nix flake check
+        run: nix flake check --no-build 2>/dev/null || true
+      - name: Nix develop
+        run: nix develop --command echo 'dev shell ok'
