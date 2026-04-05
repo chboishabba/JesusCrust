@@ -1,0 +1,5 @@
+# UML/Docs checkpoint
+
+- 2026-04-05: Reviewed the latest additions—the new `rollback_tick.js`/`nested_microtasks.js` fixtures plus the harness assertions in `crates/harness/tests/harness_microtasks.rs` prove the adapter still honors a single commit per tick, clears pending effects on rollback, and preserves microtask ordering. These are reflective of the semantics we already describe in the architecture notes (host adapter gate + regression harness) so no diagram refresh is required yet.
+- 2026-04-05: The new `brimstone-semantic-boundary.md` write-up keeps the thin, semantics-only adapter and the regression harness on the host side, which matches the existing UML sketch (`docs/architecture/jesuscrust-vs-brimstone.puml`) rather than expanding it. No doc change needed unless the contract evolves again.
+- 2026-04-05: Reviewed `docs/brimstone_comparison.md` and the refreshed `docs/architecture/jesuscrust-vs-brimstone.puml`; they already capture the current state (QuickJS-backed harness, Brimstone only a future research path). No architecture change required; keep UML as-is.
