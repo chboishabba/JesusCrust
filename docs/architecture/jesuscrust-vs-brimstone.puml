@@ -1,0 +1,44 @@
+@startuml JesusCrust_vs_Brimstone
+scale 1.25
+skinparam packageStyle rectangle
+
+actor "App JS / UI" as App
+
+package "JesusCrust boundary" {
+  rectangle "JS host adapter\n(main-thread DOM commit gate + telemetry)" as Host
+  rectangle "Rust core / WASM worker\n(store · selectors · scheduler · patch generator)" as RustCore
+  rectangle "JS execution harness\n(currently QuickJS-backed transactional tests)" as Harness
+}
+
+package "Brimstone engine subsystems" {
+  rectangle "Parser & bytecode builder" as Parser
+  rectangle "Bytecode VM + interpreter" as VM
+  rectangle "Runtime & intrinsics" as Runtime
+  rectangle "Compacting GC & heap" as GC
+}
+
+App --> Host : batched patch intent, input events
+Host --> RustCore : delta streams, scheduling hints
+RustCore --> Host : deterministic patch batches
+Host ..> Harness : optional regression path
+Parser --> VM : emits bytecode
+VM --> Runtime : invokes intrinsics + objects
+Runtime --> GC : allocates, scavenges
+Harness ..> Parser : future research path only
+
+note left of RustCore
+  Non-borrowable zone: scheduler/graph/patch format remains bespoke to JesusCrust’s reactivity surface.
+  Host adapter + telemetry surface stays minimal and JC-owned.
+end note
+
+note right of Harness
+  Current state: JC harness is independent.
+  Future research only: Brimstone may inform semantics probes or tooling.
+  Borrowed test/fuzz patterns extend this harness or run beside it.
+end note
+
+note right of GC
+  Brimstone is a standalone JS engine; DOM access remains gated by JesusCrust’s host.
+end note
+
+@enduml

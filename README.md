@@ -25,3 +25,5 @@ Project planning artifacts live in `.planning/`.
 - API surface: `docs/api.md`
 - Host-core contract: `docs/host-core-api.md`
 - Runnable example: `node examples/quickstart.js`
+- Brimstone comparison note: `docs/brimstone_comparison.md`
+- Brimstone comparison diagram: `docs/architecture/jesuscrust-vs-brimstone.puml`
