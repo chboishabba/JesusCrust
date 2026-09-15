@@ -1,6 +1,7 @@
 mod effects;
 mod engine;
 mod graph;
+pub mod interaction;
 mod patch;
 mod scheduler;
 mod selector;
