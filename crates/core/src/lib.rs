@@ -2,6 +2,7 @@ mod effects;
 mod engine;
 mod graph;
 pub mod interaction;
+pub mod interaction_wire;
 mod patch;
 mod scheduler;
 mod selector;
