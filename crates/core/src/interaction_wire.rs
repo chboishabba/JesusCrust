@@ -2,6 +2,7 @@ use crate::interaction::{InteractionProgram, Step, TargetRef, UiAction, UiObserv
 
 pub const MAGIC: [u8; 4] = *b"JCUI";
 pub const VERSION: u16 = 1;
+pub const MAX_STEPS: usize = 1_048_576;
 pub const MAX_TARGET_BYTES: usize = 1024 * 1024;
 
 const STEP_ACT: u8 = 1;
@@ -25,6 +26,7 @@ pub enum WireError {
 }
 
 pub fn encode_program(program: &InteractionProgram) -> Vec<u8> {
+    assert!(program.steps().len() <= MAX_STEPS, "interaction program exceeds wire step bound");
     let count = u32::try_from(program.steps().len()).expect("interaction program exceeds u32 step count");
     let mut out = Vec::new();
     out.extend_from_slice(&MAGIC);
@@ -52,7 +54,7 @@ pub fn encode_program(program: &InteractionProgram) -> Vec<u8> {
 pub fn decode_program(bytes: &[u8]) -> Result<InteractionProgram, WireError> {
     let mut cursor = Cursor::new(bytes);
     let magic = cursor.take(4)?;
-    if magic != MAGIC {
+    if magic != MAGIC.as_slice() {
         return Err(WireError::BadMagic);
     }
 
@@ -62,6 +64,9 @@ pub fn decode_program(bytes: &[u8]) -> Result<InteractionProgram, WireError> {
     }
 
     let step_count = cursor.read_u32()? as usize;
+    if step_count > MAX_STEPS {
+        return Err(WireError::TooManySteps);
+    }
     let mut steps = Vec::with_capacity(step_count);
 
     for _ in 0..step_count {
