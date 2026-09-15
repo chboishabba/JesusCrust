@@ -4,6 +4,7 @@ mod graph;
 pub mod interaction;
 pub mod interaction_wire;
 mod patch;
+pub mod reading_surface;
 mod scheduler;
 mod selector;
 mod store;
