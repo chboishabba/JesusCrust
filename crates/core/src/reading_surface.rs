@@ -77,8 +77,8 @@ impl ReadingAnchor {
         semantic_ref: TargetRef,
         proof_ref: impl Into<String>,
         source_ref: impl Into<String>,
-        source_span_ref: Option<impl Into<String>>,
-        source_revision_ref: Option<impl Into<String>>,
+        source_span_ref: Option<&str>,
+        source_revision_ref: Option<&str>,
         role: ReadingRole,
     ) -> Result<Self, ReadingAnchorError> {
         if !matches!(semantic_ref, TargetRef::Semantic(_)) {
@@ -89,8 +89,8 @@ impl ReadingAnchor {
             semantic_ref,
             proof_ref: proof_ref.into(),
             source_ref: source_ref.into(),
-            source_span_ref: source_span_ref.map(Into::into),
-            source_revision_ref: source_revision_ref.map(Into::into),
+            source_span_ref: source_span_ref.map(str::to_owned),
+            source_revision_ref: source_revision_ref.map(str::to_owned),
             role,
         })
     }
